@@ -319,11 +319,12 @@ private struct ShellObFeatures: View {
 @MainActor
 @Observable
 final class ShellLocationAuth: NSObject, CLLocationManagerDelegate {
+    static let shared = ShellLocationAuth()
     var status: CLAuthorizationStatus
     var asking = false
     @ObservationIgnored private let manager = CLLocationManager()
 
-    override init() {
+    private override init() {
         status = manager.authorizationStatus
         super.init()
         manager.delegate = self
@@ -344,7 +345,7 @@ final class ShellLocationAuth: NSObject, CLLocationManagerDelegate {
 private struct ShellObPermissions: View {
     @Environment(Prefs.self) private var prefs
     @Environment(\.openURL) private var openURL
-    @State private var auth = ShellLocationAuth()
+    private var auth: ShellLocationAuth { .shared }
 
     var body: some View {
         @Bindable var prefs = prefs

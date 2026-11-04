@@ -13,7 +13,8 @@ struct ShellRailTop: View {
 
     var body: some View {
         let tilted = abs(state.mapHeading) > 1.5 || state.mapPitch > 3
-        VStack(spacing: 10) {
+        // Group (pas de VStack) : rien du tout dans le rail quand les deux boutons sont masqués
+        Group {
             if core.mode != .drive && prefs.onboarded {
                 Button {
                     Haptic.play("light")

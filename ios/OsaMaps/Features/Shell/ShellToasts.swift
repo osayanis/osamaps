@@ -75,7 +75,8 @@ struct ShellToastStack: View {
             }
             .frame(maxWidth: 520)
             .padding(.horizontal, 12)
-            .padding(.top, max(4, marker - originY))
+            // repère trop bas (recherche ouverte en plein écran…) : on revient en haut
+            .padding(.top, (marker - originY) > geo.size.height * 0.4 ? 4 : max(4, marker - originY))
             .frame(maxWidth: .infinity, alignment: .top)
             .animation(reduceMotion ? .easeOut(duration: 0.15) : Osa.anim, value: toasts.items.map(\.id))
             .animation(Osa.anim, value: state.online)
