@@ -43,7 +43,7 @@
 .guidance-alert.tone-police .guidance-alert-icon { background: var(--police); color: var(--ink); }
 
 /* --- vitesse (en bas à gauche, au-dessus de la barre) --- */
-.guidance-speed { position: fixed; left: 12px; bottom: calc(var(--safe-bottom) + 108px); display: flex; align-items: flex-end; gap: 8px; pointer-events: none; }
+.guidance-speed { position: fixed; left: 12px; bottom: calc(var(--safe-bottom) + 126px); display: flex; align-items: flex-end; gap: 8px; pointer-events: none; }
 .guidance-speedo { width: 66px; height: 66px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .guidance-speedo b { font-size: 25px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
 .guidance-speedo span { font-size: 10px; font-weight: 700; color: var(--dim); margin-top: 2px; }
@@ -51,6 +51,7 @@
 .guidance-speedo.is-over span { color: rgba(255, 255, 255, 0.85); }
 .guidance-limit { width: 50px; height: 50px; border-radius: 50%; background: #fff; border: 5px solid var(--jam); display: grid; place-items: center; box-shadow: var(--shadow); }
 .guidance-limit b { color: #000; font-size: 19px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.guidance-limit.is-wide b { font-size: 15px; letter-spacing: -0.05em; }
 
 /* --- barre du bas --- */
 .guidance-bar { position: relative; overflow: hidden; width: min(544px, calc(100% - 16px)) !important; margin: 0 8px calc(8px + var(--safe-bottom)); border-radius: var(--radius-l); padding: 14px 12px 12px; animation: guidance-up 260ms var(--ease-drawer); }
@@ -89,3 +90,6 @@
 @keyframes guidance-up { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 @keyframes guidance-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes guidance-spin { to { transform: rotate(360deg); } }
+
+/* en conduite, l'attribution de la carte passe au-dessus de la barre du bas (à remonter dans core ?) */
+.app.mode-drive .maplibregl-ctrl-bottom-right { bottom: calc(var(--safe-bottom) + 96px); }

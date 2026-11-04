@@ -2,7 +2,7 @@ import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { useGuide, type GuideAlert } from "./state";
 import { thenManeuverIndex, finishArrival } from "./engine";
-import { kindOf, mainStreet, roundaboutExit, shortLabel, isArrive, ordinalShort } from "./maneuvers";
+import { kindOf, mainStreet, roundaboutExit, roundaboutExitTarget, shortLabel, isArrive, ordinalShort } from "./maneuvers";
 import { ManeuverIcon, LaneIcon, AlertIcon, IconFlag, IconReroute } from "./icons";
 
 /** HUD de conduite (slot "hud") : prochaine manœuvre, « puis », alertes, vitesse. */
@@ -14,7 +14,7 @@ export function GuidanceHud() {
     <div className="guidance-hud">
       {arrived ? <ArrivalCard /> : recalculating ? <RecalcCard /> : route ? <ManeuverCard /> : null}
       {!arrived && <Alerts />}
-      <SpeedWidget />
+      {!arrived && <SpeedWidget />}
     </div>
   );
 }
@@ -34,7 +34,7 @@ function ManeuverCard() {
   // avant la première position accrochée, on montre la distance depuis le départ
   const dist = along === 0 && distToNext === 0 ? m.shapeIndex > 0 ? route.maneuvers[0].length : 0 : distToNext;
   const street = kind === "roundabout"
-    ? (/sortie\s+(?:dans|sur|vers)\s+([^,./]+)/i.exec(m.instruction ?? "")?.[1]?.trim() ?? mainStreet(m))
+    ? (roundaboutExitTarget(m)?.name ?? mainStreet(m))
     : mainStreet(m);
   const label = isArrive(kind) ? destName || shortLabel(m) : street || shortLabel(m);
   const sub = kind === "roundabout" && exit ? `${ordinalShort(exit)} sortie` : isArrive(kind) && kind !== "arrive" ? shortLabel(m) : null;
@@ -76,8 +76,8 @@ function RecalcCard() {
       <div className="guidance-main">
         <div className="guidance-arrow guidance-spin"><IconReroute size={40} /></div>
         <div className="guidance-text">
-          <div className="guidance-street-big">Recalcul de l'itinéraire…</div>
-          <div className="guidance-street">On cherche le meilleur chemin depuis ici</div>
+          <div className="guidance-street-big">Nouvel itinéraire…</div>
+          <div className="guidance-street">Recalcul depuis votre position</div>
         </div>
       </div>
     </div>
@@ -134,7 +134,7 @@ function SpeedWidget() {
         <span>km/h</span>
       </div>
       {limit != null && (
-        <div className="guidance-limit" aria-label={`Limitation ${limit} km/h`}><b>{limit}</b></div>
+        <div className={`guidance-limit${limit >= 100 ? " is-wide" : ""}`} aria-label={`Limitation ${limit} km/h`}><b>{limit}</b></div>
       )}
     </div>
   );

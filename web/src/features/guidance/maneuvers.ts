@@ -60,6 +60,14 @@ const ordinalWord = (n: number) => ORDINALS[n] ?? `${n}e`;
 /** « 1re », « 2e » pour l'affichage. */
 export const ordinalShort = (n: number) => (n === 1 ? "1re" : `${n}e`);
 
+/** Rue ou direction de sortie d'un rond-point, lue dans le texte Valhalla (« … 2e sortie vers A 79 (Mâcon)/Roanne »). */
+export function roundaboutExitTarget(m: Maneuver): { via: "sur" | "vers"; name: string } | null {
+  const match = /sortie\s+(dans|sur|vers)\s+([^,./]+)/i.exec(m.instruction ?? "");
+  if (!match) return null;
+  const name = match[2].replace(/\s*\([^)]*\)/g, "").trim();
+  return name ? { via: match[1].toLowerCase() === "vers" ? "vers" : "sur", name } : null;
+}
+
 /** Premier nom de rue (Valhalla donne parfois « Cours Jean Jaurès/D 528 »). */
 export function mainStreet(m: Maneuver | undefined): string {
   const s = (m?.street ?? "").split(/\s*\/\s*|\s*,\s*/)[0]?.trim() ?? "";
@@ -118,8 +126,8 @@ export function action(m: Maneuver): string {
     case "roundabout": {
       const n = roundaboutExit(m);
       // la rue de sortie est souvent dans le texte (« … 2e sortie dans Rue Philippe Thomas »)
-      const exitStreet = /sortie\s+(?:dans|sur|vers)\s+([^,./]+)/i.exec(m.instruction ?? "")?.[1]?.trim();
-      const to = exitStreet ? ` sur ${withArticle(exitStreet)}` : "";
+      const exit = roundaboutExitTarget(m);
+      const to = exit ? ` ${exit.via === "vers" ? "vers" : "sur"} ${withArticle(exit.name)}` : "";
       return n ? `au rond-point, prenez la ${ordinalWord(n)} sortie${to}` : `au rond-point, suivez l'itinéraire${to}`;
     }
     case "roundabout-exit": return `sortez du rond-point${on}`;
@@ -154,7 +162,7 @@ export function shortLabel(m: Maneuver): string {
 export function spokenDistance(m: number): string {
   if (m < 95) return `${Math.max(10, Math.round(m / 10) * 10)} mètres`;
   if (m < 975) return `${Math.round(m / 50) * 50} mètres`;
-  const km = Math.round(m / 500) / 2;
+  const km = m >= 9750 ? Math.round(m / 1000) : Math.round(m / 500) / 2;
   const txt = Number.isInteger(km) ? String(km) : km.toFixed(1).replace(".", ",");
   return `${txt} kilomètre${km >= 2 ? "s" : ""}`;
 }

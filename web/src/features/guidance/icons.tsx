@@ -65,18 +65,17 @@ function shapeFor(kind: ManeuverKind): Shape {
 export function ManeuverIcon({ kind, exit, size = 64 }: { kind: ManeuverKind; exit?: number | null; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 48 48", fill: "none", stroke: "currentColor", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   if (kind === "roundabout" || kind === "roundabout-exit") {
+    // sens giratoire français (anti-horaire) : on entre par le bas, on tourne par la droite
+    const exitOnly = kind === "roundabout-exit";
     return (
       <svg {...common} strokeWidth={4}>
-        <circle cx="24" cy="18" r="11" opacity={kind === "roundabout-exit" ? 0.35 : 1} />
-        <path d="M24 44 L24 29" opacity={kind === "roundabout-exit" ? 0.35 : 1} />
-        {kind === "roundabout" && exit ? (
-          <text x="24" y="18" dy="0.36em" textAnchor="middle" fill="currentColor" stroke="none" fontSize="15" fontWeight="800" fontFamily="var(--font)">{exit}</text>
-        ) : (
-          <>
-            <path d="M32 10.5 L41 3.5" />
-            <path d={head(41, 3.5, 52, 7)} />
-          </>
-        )}
+        <circle cx="24" cy="23" r="9.5" opacity={0.32} />
+        <path d="M24 44 L24 32.5 A9.5 9.5 0 0 0 24 13.5 L24 5" opacity={exitOnly ? 0.32 : 1} />
+        <path d={head(24, 5, 0)} />
+        {exitOnly && <path d="M24 13.5 L24 5" />}
+        {!exitOnly && exit ? (
+          <text x="24" y="23" dy="0.36em" textAnchor="middle" fill="currentColor" stroke="none" fontSize="11.5" fontWeight="800" fontFamily="var(--font)">{exit}</text>
+        ) : null}
       </svg>
     );
   }
@@ -117,7 +116,7 @@ const LANE_ANGLE: Record<string, number> = {
 export function LaneIcon({ directions, valid }: { directions: string[]; valid: boolean }) {
   const dirs = directions.length ? directions : ["straight"];
   return (
-    <svg width="30" height="30" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={valid ? 1 : 0.3} aria-hidden>
+    <svg width="38" height="38" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={valid ? 1 : 0.3} aria-hidden>
       {dirs.map((raw) => {
         const d = raw.toLowerCase().replace(/[\s-]/g, "_");
         const paths = d.includes("uturn") || d === "reverse" ? UTURN_LEFT : turnPaths(LANE_ANGLE[d] ?? 0, { baseX: 24 });

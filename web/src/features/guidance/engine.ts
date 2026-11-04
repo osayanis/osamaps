@@ -5,7 +5,7 @@ import { on, emit, type BusEvents } from "../../core/bus";
 import { speak, setMuted } from "../../core/voice";
 import { cumulativeDistances, snapToLine, distance } from "../../core/geometry";
 import { guide, setGuide, initialGuide, useGuide, useGuidePrefs, type GuideAlert } from "./state";
-import { action, capitalize, kindOf, isArrive, spokenDistance } from "./maneuvers";
+import { action, capitalize, kindOf, isArrive, mainStreet, spokenDistance, withArticle } from "./maneuvers";
 
 /**
  * Le moteur du guidage : à chaque position, accroche au tracé, calcule la progression,
@@ -23,6 +23,8 @@ let odometer = 0;
 let tripStart = { time: 0, odo: 0 };
 /** Annonces déjà faites : index de manœuvre → étape la plus proche annoncée. */
 let announced = new Map<number, number>();
+/** Manœuvres pour lesquelles « Continuez pendant… » a déjà été dit. */
+let continued = new Set<number>();
 let off = { count: 0, since: 0 };
 let lastRecompute = 0;
 let recomputeTimer = 0;
@@ -86,10 +88,23 @@ function loadRoute(route: Route) {
   ctx = { route, cum, total: cum[cum.length - 1] ?? 0 };
   lastSeg = 0;
   announced = new Map();
+  continued = new Set();
   off = { count: 0, since: 0 };
   lastLimit = null;
   window.clearTimeout(recomputeTimer);
   setGuide({ routeId: route.id, recalculating: false, along: 0, nextIndex: Math.min(1, route.maneuvers.length - 1), distToNext: 0 });
+}
+
+/**
+ * Accrochage limité à une fenêtre devant la dernière position (≈ 2 km + 30 s de route) : évite de
+ * sauter sur une portion parallèle plus loin dans l'itinéraire à cause du bruit GPS.
+ */
+function snapWindow(p: LngLat, c: RouteCtx, from: number) {
+  const limit = c.cum[from] + 2000 + speedMs * 30;
+  let end = from + 2;
+  while (end < c.cum.length && c.cum[end - 1] <= limit) end++;
+  const snap = snapToLine(p, c.route.coords.slice(from, end), c.cum.slice(from, end), 0);
+  return { ...snap, index: snap.index + from };
 }
 
 function nextManeuver(route: Route, seg: number): number {
@@ -125,6 +140,7 @@ function resetDrive() {
   ctx = null;
   lastSeg = 0;
   announced = new Map();
+  continued = new Set();
   off = { count: 0, since: 0 };
   spokenAlerts.clear();
   lastLimit = null;
@@ -162,9 +178,7 @@ function onPosition(pos: Position) {
   const route = activeRoute();
   if (!route || route.coords.length < 2) return;
   if (!ctx || ctx.route.id !== route.id) {
-    const rerouted = ctx != null;
     loadRoute(route);
-    if (rerouted) announced.clear();
   }
   const c = ctx!;
   const g = guide();
@@ -175,7 +189,7 @@ function onPosition(pos: Position) {
   if (g.arrived) return;
 
   // accrochage : d'abord près de la dernière position connue, puis tout le tracé si on s'en écarte
-  let snap = snapToLine(pos.coord, route.coords, c.cum, Math.max(0, lastSeg - 3));
+  let snap = snapWindow(pos.coord, c, Math.max(0, lastSeg - 3));
   const accuracy = pos.accuracy ?? 10;
   const tolerance = Math.max(40, Math.min(accuracy * 1.5, 120));
   if (snap.offset > tolerance && lastSeg > 3) {
@@ -231,7 +245,15 @@ function announce(route: Route, next: number, dist: number, stages: number[]) {
   // étape la plus proche atteinte
   let reached = -1;
   for (let i = 0; i < stages.length; i++) if (dist <= stages[i]) reached = i;
-  if (reached < 0) return;
+  if (reached < 0) {
+    // juste après une manœuvre, si la suivante est loin : « Continuez sur la N 7 pendant 12 kilomètres »
+    if (dist > 3000 && !continued.has(next)) {
+      continued.add(next);
+      const road = mainStreet(ms[next - 1]);
+      say(`Continuez${road ? ` sur ${withArticle(road)}` : ""} pendant ${spokenDistance(dist)}.`);
+    }
+    return;
+  }
   const done = announced.get(next) ?? -1;
   if (reached <= done) return;
 
@@ -248,7 +270,7 @@ function announce(route: Route, next: number, dist: number, stages: number[]) {
     const gap = ctx.cum[Math.min(after.shapeIndex, ctx.cum.length - 1)] - ctx.cum[Math.min(m.shapeIndex, ctx.cum.length - 1)];
     const afterKind = kindOf(after);
     if (gap < 150 && afterKind !== "roundabout-exit" && kind !== "roundabout") {
-      text += `, puis ${isArrive(afterKind) ? "vous serez arrivé à destination" : action(after)}`;
+      text += `, puis ${isArrive(afterKind) ? "vous serez à destination" : action(after)}`;
     }
   }
   say(`${text}.`);

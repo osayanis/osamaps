@@ -24,7 +24,7 @@ export function DriveBar() {
     return () => window.clearTimeout(t);
   }, [confirm]);
 
-  if (mode !== "drive" || panel !== null || !route) return null;
+  if (mode !== "drive" || panel !== null || !route || arrived) return null;
 
   const remainingTime = progress?.remainingTime ?? route.duration;
   const remainingDistance = progress?.remainingDistance ?? route.distance;
@@ -41,12 +41,12 @@ export function DriveBar() {
         </div>
       ) : (
         <div className="guidance-bar-row">
-          <button className="guidance-btn" aria-label="Arrêter le guidage" onClick={() => (arrived ? stopGuidance() : setConfirm(true))}>
+          <button className="guidance-btn" aria-label="Arrêter le guidage" onClick={() => setConfirm(true)}>
             <IconClose size={26} />
           </button>
           <div className="guidance-eta">
-            <b>{arrived ? "Arrivé" : formatEta(remainingTime)}</b>
-            <span>{arrived ? "à destination" : `${formatDuration(remainingTime)} · ${formatDistance(remainingDistance)}`}</span>
+            <b>{formatEta(remainingTime)}</b>
+            <span>{formatDuration(remainingTime)} · {formatDistance(remainingDistance)}</span>
           </div>
           <button className={`guidance-btn${voice ? "" : " is-off"}`} aria-label={voice ? "Couper la voix" : "Remettre la voix"} aria-pressed={!voice} onClick={toggleVoice}>
             {voice ? <IconVolume size={26} /> : <IconVolumeOff size={26} />}
