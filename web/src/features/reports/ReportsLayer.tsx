@@ -48,6 +48,9 @@ function drawDisc(kind: Kind, sub: string | null): ImageData {
   return g.getImageData(0, 0, px, px);
 }
 
+/** Ordre d'empilement quand deux pastilles se chevauchent (le plus grave dessus). */
+const RANK: Record<Kind, number> = { closure: 7, accident: 6, police: 5, hazard: 4, weather: 3, jam: 2, works: 1 };
+
 const imageName = (kind: Kind, sub: string | null) => `reports-${kind}${sub ? `-${sub}` : ""}`;
 
 function addImages(map: MLMap) {
@@ -66,7 +69,7 @@ function toGeoJSON(items: Record<string, Report>): GeoJSON.FeatureCollection {
     features: Object.values(items).filter((r) => r.expiresAt > t).map((r) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [r.lng, r.lat] },
-      properties: { id: r.id, icon: imageName(r.type, r.sub), type: r.type },
+      properties: { id: r.id, icon: imageName(r.type, r.sub), type: r.type, rank: RANK[r.type] },
     })),
   };
 }
@@ -102,6 +105,7 @@ function install(map: MLMap) {
         "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.75, 15, 1, 18, 1.15],
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
+        "symbol-sort-key": ["get", "rank"],
         "icon-pitch-alignment": "viewport",
       },
     });
@@ -121,11 +125,13 @@ export function ReportsLayer() {
     const push = () => (map.getSource(SRC) as GeoJSONSource | undefined)?.setData(toGeoJSON(useReports.getState().items));
     const unsub = useReports.subscribe((s, prev) => { if (s.items !== prev.items) push(); });
 
-    // zone visible → chargement + tuiles temps réel (debounce)
+    // zone visible → chargement + tuiles temps réel. Limitation (pas d'anti-rebond) : en conduite la
+    // carte enchaîne les easeTo et « moveend » tombe en continu, un anti-rebond ne partirait jamais.
     let t = 0;
     const refresh = () => {
-      window.clearTimeout(t);
+      if (t) return;
       t = window.setTimeout(() => {
+        t = 0;
         if (map.getZoom() < 7) return;
         const b = map.getBounds();
         const padX = (b.getEast() - b.getWest()) * 0.25, padY = (b.getNorth() - b.getSouth()) * 0.25;

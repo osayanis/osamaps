@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCore, core, type LngLat } from "../../core/store";
-import { distance, formatDistance } from "../../core/geometry";
+import { distance, formatDistance, formatDuration } from "../../core/geometry";
 import { emit } from "../../core/bus";
 import { ago, KIND_ORDER, KINDS, titleOf, type Kind } from "./catalog";
 import { Icon, KindDisc } from "./Icon";
@@ -144,7 +144,7 @@ function ReportDetail() {
       <div className="reports-stats">
         <div><b>{r.confirmations}</b><span>{r.confirmations > 1 ? "confirmations" : "confirmation"}</span></div>
         {d != null && <div><b>{formatDistance(d)}</b><span>de toi</span></div>}
-        <div><b>{r.updatedAt > r.createdAt + 60_000 ? ago(r.updatedAt).replace("il y a ", "") : "—"}</b><span>dernière confirmation</span></div>
+        <div><b>{formatDuration(Math.max(60, (r.expiresAt - Date.now()) / 1000))}</b><span>encore visible</span></div>
       </div>
       {mine ? (
         <div className="reports-actions">
