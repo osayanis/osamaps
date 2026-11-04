@@ -30,7 +30,24 @@ export function startLayoutClass(): () => void {
   };
   apply();
   const unsub = subscribeSide(apply);
-  return () => { unsub(); html.classList.remove("osa-side", "osa-stack"); };
+
+  // hauteur du panneau du bas → --shell-sheet-h, pour que le rail reste juste au-dessus
+  const ro = new ResizeObserver(() => {
+    const sheet = document.querySelector<HTMLElement>(".slot-sheet");
+    html.style.setProperty("--shell-sheet-h", `${Math.round(sheet?.getBoundingClientRect().height ?? 0)}px`);
+  });
+  let observed: Element | null = null;
+  const watch = () => {
+    const sheet = document.querySelector(".slot-sheet");
+    if (sheet && sheet !== observed) { if (observed) ro.unobserve(observed); ro.observe(sheet); observed = sheet; }
+  };
+  watch();
+  const t = window.setInterval(watch, 2000); // le shell peut être remonté (StrictMode en dev)
+  return () => {
+    unsub(); ro.disconnect(); window.clearInterval(t);
+    html.classList.remove("osa-side", "osa-stack");
+    html.style.removeProperty("--shell-sheet-h");
+  };
 }
 
 /** En ligne / hors ligne. */

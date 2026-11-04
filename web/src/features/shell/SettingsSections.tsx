@@ -15,9 +15,9 @@ import {
 export const APP_VERSION = "0.1.0";
 
 /** Brique de section de réglages : titre + carte de lignes. */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, place }: { title: string; children: ReactNode; place: "top" | "bottom" }) {
   return (
-    <section className="shell-set">
+    <section className={`shell-set ${place}`}>
       <h3>{title}</h3>
       <div className="shell-set-card card">{children}</div>
     </section>
@@ -58,7 +58,7 @@ export function GeneralSettings() {
   ] as const;
 
   return (
-    <Section title="Général">
+    <Section title="Général" place="top">
       <div className="shell-set-row column">
         <div className="shell-set-text">
           <span>Style de carte</span>
@@ -118,7 +118,7 @@ export function AboutSettings() {
 
   return (
     <>
-      <Section title="Accueil et données">
+      <Section title="Accueil et données" place="bottom">
         <Row label="Revoir l’accueil" hint="Les écrans du premier lancement." onClick={replay}>
           <IconRefresh size={20} />
         </Row>
@@ -129,7 +129,7 @@ export function AboutSettings() {
         </Row>
       </Section>
 
-      <Section title="À propos">
+      <Section title="À propos" place="bottom">
         <div className="shell-set-about">
           <div className="shell-set-about-head">
             <b>OsaMaps</b>

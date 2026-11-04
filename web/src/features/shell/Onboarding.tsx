@@ -111,11 +111,17 @@ function OnboardingFlow() {
   );
 }
 
+/** Les deux derniers mots restent ensemble (pas de mot seul sur la dernière ligne). */
+function noOrphan(words: string[]) {
+  if (words.length < 4) return words;
+  return [...words.slice(0, -2), `${words[words.length - 2]}\u00a0${words[words.length - 1]}`];
+}
+
 /** Titre qui apparaît mot par mot. */
 function Words({ text, start = 0 }: { text: string; start?: number }) {
   return (
     <h1 className="shell-ob-title" aria-label={text}>
-      {text.split(" ").map((w, i) => (
+      {noOrphan(text.split(" ")).map((w, i) => (
         <span key={i} aria-hidden="true" className="shell-ob-word" style={{ animationDelay: `${start + i * 55}ms` }}>{w}&nbsp;</span>
       ))}
     </h1>
@@ -233,7 +239,7 @@ function Nickname({ name, setName, onSubmit }: { name: string; setName: (s: stri
   }, []);
   return (
     <div className="shell-ob-stack">
-      <Words text="Comment on t’appelle ?" />
+      <Words text={"Comment on t’appelle\u00a0?"} />
       <form className="shell-ob-form st" style={{ "--i": 4 } as React.CSSProperties}
         onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
         <input ref={input} className="shell-ob-input" value={name} maxLength={30} autoComplete="nickname"

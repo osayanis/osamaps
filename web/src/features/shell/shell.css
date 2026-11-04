@@ -60,11 +60,13 @@
 .shell-offline b { color: var(--text); font-weight: 700; }
 
 /* ——— Rail ——————————————————————————————————————————————————————————————————————— */
+.shell-rail-top { order: -10; }
+.shell-rail-bottom { order: 10; }
 .shell-rail-btn { animation: shell-pop 220ms var(--ease-out) both; color: var(--text); }
 @keyframes shell-pop { from { opacity: 0; transform: scale(0.85); } }
 .shell-compass svg { transition: transform 120ms linear; }
 .shell-compass-n { color: var(--jam); }
-.shell-recenter-pill { min-height: 52px; padding: 0 20px; font-size: 16px; box-shadow: var(--shadow); }
+.pill.shell-recenter-pill { color: var(--ink); min-height: 52px; padding: 0 20px; font-size: 16px; box-shadow: var(--shadow); }
 @media (hover: hover) { .round.shell-rail-btn:hover { border-color: var(--line-hi); } }
 
 /* ——— Accueil ———————————————————————————————————————————————————————————————————— */
@@ -102,7 +104,7 @@
 .st { animation: shell-ob-rise 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
 @keyframes shell-ob-rise { from { opacity: 0; transform: translateY(10px); } }
 
-.shell-ob-mark { margin-bottom: 30px; width: 88px; height: 88px; border-radius: 22px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); animation: shell-ob-mark 560ms var(--ease-out) both; }
+.shell-ob-mark { margin-bottom: 30px; width: 88px; height: 88px; border-radius: 22px; animation: shell-ob-mark 560ms var(--ease-out) both; }
 .shell-ob-mark svg { display: block; }
 @keyframes shell-ob-mark { from { opacity: 0; transform: scale(0.82) translateY(8px); } }
 .shell-ob-lead { margin: 0; font-size: 17px; line-height: 1.5; color: var(--dim); font-weight: 500; }
@@ -169,6 +171,8 @@ label.shell-ob-perm { cursor: pointer; }
 }
 
 /* ——— Réglages ————————————————————————————————————————————————————————————————————— */
+.shell-set.top { order: -10; }
+.shell-set.bottom { order: 10; }
 .shell-set h3 { margin: 6px 4px 8px; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
 .shell-set-card { overflow: hidden; }
 .shell-set-row {
@@ -205,6 +209,16 @@ label.shell-ob-perm { cursor: pointer; }
 .shell-set-credits { border-top: 1px solid var(--line); padding: 12px 16px 10px; }
 .shell-set-credits p { margin: 0 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--faint); }
 .shell-set-credits a { color: var(--dim); text-underline-offset: 2px; }
+
+/* ——— Rail au-dessus du panneau du bas (mobile) ———————————————————————————————————— */
+/* Le socle place le rail à 180 px du bas ; ici il suit la hauteur réelle du panneau (mesurée
+   dans layout.ts), sans dépasser la moitié de l'écran, et reste au-dessus de l'attribution.
+   `bottom` plutôt que transform : un transform ferait du rail le repère des éléments
+   position:fixed que d'autres modules pourraient y mettre (menus, bulles). */
+html.osa-stack .slot-rail {
+  bottom: calc(12px + var(--safe-bottom) + min(max(var(--shell-sheet-h, 168px), 28px), 50vh));
+  transition: bottom 280ms var(--ease-drawer);
+}
 
 /* ——— Agencement latéral (grand écran, téléphone en paysage) ————————————————————— */
 /* Le panneau du bas devient une colonne à gauche ; la recherche et le HUD s'y alignent. */

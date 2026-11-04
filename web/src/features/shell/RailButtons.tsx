@@ -6,11 +6,11 @@ import { IconCompass, IconLocate, IconSettings } from "./icons";
 import { haptic } from "./haptics";
 
 /**
- * Boutons du rail (bord droit, empilés de haut en bas par `order`) :
- *   order 5   Réglages   — en haut, hors conduite
- *   order 6   Boussole   — quand la carte est tournée ou inclinée, hors conduite (la carte suit le cap)
- *   order 100 (défaut)   — boutons des autres modules : signaler, trafic, amis, profil…
- *   order 990 Recentrer  — en bas, près du pouce, quand le suivi est coupé
+ * Boutons du rail (bord droit, colonne flex ; position par la propriété CSS `order`) :
+ *   order -10  Réglages   — en haut, hors conduite
+ *   order -10  Boussole   — quand la carte est tournée ou inclinée, hors conduite (la carte suit le cap)
+ *   order 0               — boutons des autres modules : signaler, trafic, amis, profil…
+ *   order 10   Recentrer  — en bas, près du pouce, quand le suivi est coupé
  * Le rail est ancré en bas : un bouton qui apparaît pousse ceux du dessus vers le haut. Recentrer
  * est tout en bas (le geste le plus fréquent après avoir déplacé la carte) ; Réglages et Boussole,
  * rarement utilisés, sont en haut.
@@ -32,7 +32,7 @@ export function SettingsButton() {
   const onboarded = usePrefs((s) => s.onboarded);
   if (mode === "drive" || !onboarded) return null;
   return (
-    <button className="round shell-rail-btn" aria-label="Réglages" title="Réglages"
+    <button className="round shell-rail-btn shell-rail-top" aria-label="Réglages" title="Réglages"
       onClick={() => { haptic("tap"); core().set({ settingsOpen: true }); }}>
       <IconSettings />
     </button>
@@ -59,7 +59,7 @@ export function CompassButton() {
   const tilted = Math.abs(view.bearing) > 1.5 || view.pitch > 3;
   if (!map || mode === "drive" || !tilted) return null;
   return (
-    <button className="round shell-rail-btn shell-compass" aria-label="Remettre la carte au nord" title="Nord en haut"
+    <button className="round shell-rail-btn shell-rail-top shell-compass" aria-label="Remettre la carte au nord" title="Nord en haut"
       onClick={() => { haptic("tap"); map.easeTo({ bearing: 0, pitch: 0, duration: 400 }); }}>
       <IconCompass size={24} style={{ transform: `rotate(${-view.bearing}deg)` }} />
     </button>
@@ -75,13 +75,13 @@ export function RecenterButton() {
   // en conduite : pilule avec libellé, plus facile à viser
   if (mode === "drive") {
     return (
-      <button className="pill shell-rail-btn shell-recenter-pill" onClick={go}>
+      <button className="pill shell-rail-btn shell-rail-bottom shell-recenter-pill" onClick={go}>
         <IconLocate size={20} /> Recentrer
       </button>
     );
   }
   return (
-    <button className="round shell-rail-btn" aria-label="Recentrer sur ma position" title="Recentrer (R)" onClick={go}>
+    <button className="round shell-rail-btn shell-rail-bottom" aria-label="Recentrer sur ma position" title="Recentrer (R)" onClick={go}>
       <IconLocate />
     </button>
   );
