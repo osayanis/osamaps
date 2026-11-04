@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/core/mapview.tsx","./src/core/bus.ts","./src/core/geo.ts","./src/core/geometry.ts","./src/core/identity.ts","./src/core/prefs.ts","./src/core/registry.ts","./src/core/services.ts","./src/core/store.ts","./src/core/voice.ts","./src/features/index.ts"],"version":"5.9.3"}
