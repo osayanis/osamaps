@@ -1,0 +1,95 @@
+/* Guidage tour par tour — lisible d'un coup d'œil, gros boutons (≥ 56 px). */
+
+.guidance-hud { display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; }
+.guidance-hud > * { pointer-events: auto; }
+
+/* --- carte de manœuvre --- */
+.guidance-card { border-radius: var(--radius-l); padding: 14px 18px 14px 14px; animation: guidance-in 220ms var(--ease-out); }
+.guidance-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.guidance-arrow { flex: none; width: 68px; height: 68px; display: grid; place-items: center; }
+.guidance-text { min-width: 0; flex: 1; }
+.guidance-dist { font-size: 40px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.guidance-street { margin-top: 6px; font-size: 18px; line-height: 1.25; font-weight: 650; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.guidance-street b { color: var(--text); font-weight: 800; }
+.guidance-street-big { font-size: 21px; line-height: 1.2; font-weight: 800; }
+.guidance-trip { margin-top: 4px; font-size: 14px; color: var(--faint); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* manœuvre imminente : la carte s'inverse (blanc, texte noir) */
+.guidance-card.is-now { background: var(--text); color: var(--ink); border-color: transparent; }
+.guidance-card.is-now .guidance-street { color: rgba(0, 0, 0, 0.62); }
+.guidance-card.is-now .guidance-street b { color: var(--ink); }
+.guidance-card.is-now .guidance-lanes { border-color: rgba(0, 0, 0, 0.12); }
+
+.guidance-lanes { display: flex; justify-content: center; gap: 4px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+
+.guidance-then { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; max-width: 100%; border-radius: 999px; padding: 6px 16px 6px 14px; font-size: 15px; font-weight: 700; animation: guidance-in 220ms var(--ease-out); }
+.guidance-then > span:first-child { color: var(--dim); }
+.guidance-then-street { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.guidance-spin svg { animation: guidance-spin 1s linear infinite; color: var(--dim); }
+.guidance-ok { color: var(--ok); }
+.guidance-finish { margin-top: 12px; width: 100%; justify-content: center; min-height: 56px; font-size: 17px; }
+
+/* --- alertes --- */
+.guidance-alert { display: flex; align-items: center; gap: 12px; min-height: 58px; border-radius: var(--radius-m); padding: 8px 16px 8px 8px; animation: guidance-in 220ms var(--ease-out); }
+.guidance-alert-icon { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-hi); color: var(--text); }
+.guidance-alert-text { flex: 1; min-width: 0; font-size: 17px; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.guidance-alert-dist { flex: none; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.guidance-alert.tone-danger { border-color: color-mix(in srgb, var(--jam) 55%, transparent); }
+.guidance-alert.tone-danger .guidance-alert-icon { background: var(--jam); color: #fff; }
+.guidance-alert.tone-warn { border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.guidance-alert.tone-warn .guidance-alert-icon { background: var(--danger); color: var(--ink); }
+.guidance-alert.tone-police { border-color: color-mix(in srgb, var(--police) 55%, transparent); }
+.guidance-alert.tone-police .guidance-alert-icon { background: var(--police); color: var(--ink); }
+
+/* --- vitesse (en bas à gauche, au-dessus de la barre) --- */
+.guidance-speed { position: fixed; left: 12px; bottom: calc(var(--safe-bottom) + 126px); display: flex; align-items: flex-end; gap: 8px; pointer-events: none; }
+.guidance-speedo { width: 66px; height: 66px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.guidance-speedo b { font-size: 25px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
+.guidance-speedo span { font-size: 10px; font-weight: 700; color: var(--dim); margin-top: 2px; }
+.guidance-speedo.is-over { background: var(--jam); border-color: transparent; }
+.guidance-speedo.is-over span { color: rgba(255, 255, 255, 0.85); }
+.guidance-limit { width: 50px; height: 50px; border-radius: 50%; background: #fff; border: 5px solid var(--jam); display: grid; place-items: center; box-shadow: var(--shadow); }
+.guidance-limit b { color: #000; font-size: 19px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.guidance-limit.is-wide b { font-size: 15px; letter-spacing: -0.05em; }
+
+/* --- barre du bas --- */
+.guidance-bar { position: relative; overflow: hidden; width: min(544px, calc(100% - 16px)) !important; margin: 0 8px calc(8px + var(--safe-bottom)); border-radius: var(--radius-l); padding: 14px 12px 12px; animation: guidance-up 260ms var(--ease-drawer); }
+.guidance-progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--line); }
+.guidance-progress i { display: block; height: 100%; background: var(--text); opacity: 0.7; transform-origin: left center; transition: transform 300ms var(--ease-out); }
+.guidance-bar-row { display: flex; align-items: center; gap: 10px; min-height: 56px; }
+.guidance-btn { flex: none; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); background: var(--surface-hi); color: var(--text); cursor: pointer; transition: transform 140ms var(--ease-out); }
+.guidance-btn:active { transform: scale(0.94); }
+.guidance-btn.is-off { color: var(--faint); background: var(--surface); }
+.guidance-btn.is-on { background: var(--text); color: var(--ink); border-color: transparent; }
+.guidance-eta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.guidance-eta b { font-size: 27px; line-height: 1.05; font-weight: 800; font-variant-numeric: tabular-nums; }
+.guidance-eta span { margin-top: 2px; font-size: 14px; font-weight: 650; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-variant-numeric: tabular-nums; }
+.guidance-confirm { animation: guidance-fade 160ms var(--ease-out); }
+.guidance-confirm-text { flex: 1; min-width: 0; font-size: 16px; font-weight: 750; padding-left: 6px; }
+.guidance-pill { min-height: 56px; padding: 0 20px; font-size: 16px; }
+.guidance-stop { background: var(--jam); color: #fff; }
+
+/* --- réglages --- */
+.guidance-settings { padding: 6px 16px; }
+.guidance-settings h3 { margin: 12px 0 4px; font-size: 17px; font-weight: 750; }
+.guidance-setting { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.guidance-settings h3 + .guidance-setting { border-top: 0; }
+.guidance-setting-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; font-weight: 650; }
+.guidance-setting-text small { font-size: 13px; color: var(--dim); font-weight: 500; }
+.guidance-switch { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 52px; height: 32px; margin: 0; border-radius: 999px; background: var(--surface-hi); border: 1px solid var(--line-hi); cursor: pointer; transition: background-color 160ms var(--ease-out); }
+.guidance-switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--dim); transition: transform 180ms var(--ease-out); }
+.guidance-switch:checked { background: var(--text); border-color: transparent; }
+.guidance-switch:checked::before { transform: translateX(20px); background: var(--ink); }
+.guidance-switch:focus-visible, .guidance-range input:focus-visible, .guidance-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.guidance-range { flex-wrap: wrap; }
+.guidance-range-value { font-weight: 800; font-variant-numeric: tabular-nums; }
+.guidance-range input { width: 100%; accent-color: #fff; margin: 4px 0 0; }
+
+@keyframes guidance-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes guidance-up { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes guidance-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes guidance-spin { to { transform: rotate(360deg); } }
+
+/* en conduite, l'attribution de la carte passe au-dessus de la barre du bas (à remonter dans core ?) */
+.app.mode-drive .maplibregl-ctrl-bottom-right { bottom: calc(var(--safe-bottom) + 96px); }
