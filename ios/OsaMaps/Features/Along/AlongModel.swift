@@ -38,7 +38,14 @@ final class AlongModel {
         guard !started else { return }
         started = true
         let core = Core.shared, prefs = AlongPrefs.shared
-        alongObserve({ _ = core.routes; _ = core.activeRoute; _ = core.mode }) { [weak self] in self?.sync() }
+        var lastMode = core.mode
+        alongObserve({ _ = core.routes; _ = core.activeRoute; _ = core.mode }) { [weak self] in
+            guard let self else { return }
+            self.sync()
+            // retour en exploration : la carte a pu bouger pendant l'aperçu / la conduite
+            if core.mode == .browse, lastMode != .browse, let m = core.map { self.loadNearby(m) }
+            lastMode = core.mode
+        }
         var lastEnergy = prefs.energy, lastShow = prefs.showStations
         alongObserve({ _ = prefs.energy; _ = prefs.showStations }) { [weak self] in
             guard let self else { return }
