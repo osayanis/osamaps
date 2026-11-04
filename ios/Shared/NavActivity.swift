@@ -20,6 +20,19 @@ struct NavActivityAttributes: ActivityAttributes {
         /// Alerte en cours (« Police signalée »), si besoin.
         var alert: String?
         var arrived: Bool = false
+        /// Ajouts du module guidance (valeurs par défaut : compatibles avec l'ancien contenu).
+        /// Forme de la flèche dessinée : valeur brute de GuidanceKind (« right », « roundabout »…).
+        var kind: String = "straight"
+        /// Rond-point : numéro de sortie.
+        var exit: Int? = nil
+        /// Ton de l'alerte : "info", "warn", "danger", "police".
+        var alertTone: String? = nil
+        /// Mètres jusqu'à l'alerte (nil = sans distance).
+        var alertDistance: Double? = nil
+        /// Part du trajet effectuée (0…1).
+        var progress: Double = 0
+        /// Manœuvre imminente (affichage inversé, comme le HUD).
+        var imminent: Bool = false
     }
 
     var destinationName: String
