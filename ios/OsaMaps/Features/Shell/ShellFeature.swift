@@ -9,14 +9,15 @@ import Observation
 ///   top / hud un repère invisible (order 10 000) qui mesure le bas de la barre du haut : les toasts
 ///             se posent juste en dessous, sans cacher la recherche ni le guidage
 ///   carte     style clair / sombre / auto (lever et coucher du soleil calculés sur place)
-/// + écran toujours allumé en conduite, retours haptiques, surveillance du réseau, Siri / Raccourcis.
+/// + retours haptiques, surveillance du réseau, Siri / Raccourcis.
+/// (L'écran toujours allumé en conduite est géré par le module guidance : isIdleTimerDisabled.)
 ///
 /// Contrats exposés aux autres modules (sans import) :
 ///   emit(.toast(Toast(text:icon:tone:duration:)))   un toast (même `id` = remplace le précédent)
 ///   emit(.haptic("light" | "medium" | "success" | "warning" | "error"))
 ///   emit(.mapRecenter)                             recentre (follow = true)
 ///   .custom(name: "shell:mapTheme", payload: ["theme": "light" | "dark"])  émis quand le fond change
-///   .custom(name: "shell:report", payload: ["kind": "police"])            Siri « Signaler la police »
+///   .custom(name: "shell:report", payload: ["kind": "police"|"accident"|"jam"|"hazard"|"works"])  Siri (écouté par reports)
 ///   .custom(name: "shell:online", payload: ["online": "1" | "0"])         changement de réseau
 let shellFeature = Feature(
     id: "shell",
@@ -61,7 +62,6 @@ final class ShellState {
         guard !started else { return }
         tokens.append(Bus.shared.on { [weak self] e in self?.handle(e) })
         ShellNetwork.shared.start()
-        observeMode()
         cameraTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             Task { @MainActor in ShellState.shared.readCamera() }
         }
@@ -73,18 +73,10 @@ final class ShellState {
         case .toast(let t): ShellToasts.shared.show(t)
         case .haptic(let kind): if ShellPrefs.haptics { Haptic.play(kind) }
         case .mapRecenter: Core.shared.follow = true
-        case .driveAlert(let a): if (a.tone == .warn || a.tone == .danger) && ShellPrefs.haptics { Haptic.play("warning") }
+        case .driveAlert(let a): if (a.tone == .warn || a.tone == .danger || a.tone == .police) && ShellPrefs.haptics { Haptic.play("warning") }
         case .driveArrived: if ShellPrefs.haptics { Haptic.play("success") }
         case .driveStart: if ShellPrefs.haptics { Haptic.play("light") }
         default: break
-        }
-    }
-
-    /// Écran toujours allumé pendant la conduite.
-    private func observeMode() {
-        UIApplication.shared.isIdleTimerDisabled = Core.shared.mode == .drive
-        withObservationTracking { _ = Core.shared.mode } onChange: {
-            Task { @MainActor in ShellState.shared.observeMode() }
         }
     }
 

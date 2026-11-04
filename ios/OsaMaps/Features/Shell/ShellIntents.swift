@@ -6,7 +6,9 @@ import Foundation
 ///   « Rentrer à la maison avec OsaMaps »  → lit `Store.load("search.home", default: Place?.none)`
 ///                                           (adresse Maison du module search) → `.placeGo(home)`
 ///   « Signaler la police avec OsaMaps »   → `.custom(name: "shell:report", payload: ["kind": "police"])`
-///                                           (le module reports l'écoute)
+///   « Signaler un accident avec OsaMaps » → idem avec kind accident | jam | hazard | works
+///                                           (le module reports l'écoute : panneau pré-rempli, envoi après
+///                                           5 s annulables). Loi française : jamais « radar » dans les phrases.
 ///   « Arrêter la navigation OsaMaps »     → `.driveStop(arrived: false)` + mode browse
 
 /// Attend que l'app soit prête (modules démarrés + carte créée), au plus ~6 s.
@@ -50,7 +52,36 @@ struct ShellReportPoliceIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         await ShellLaunch.ready()
         Bus.shared.emit(.custom(name: "shell:report", payload: ["kind": "police"]))
-        return .result(dialog: "C’est noté, merci pour les autres.")
+        return .result(dialog: "Signalement de police prêt : il part dans 5 secondes, touche Annuler si besoin.")
+    }
+}
+
+enum ShellReportKind: String, AppEnum {
+    case police, accident, jam, hazard, works
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Signalement"
+    static let caseDisplayRepresentations: [ShellReportKind: DisplayRepresentation] = [
+        .police: DisplayRepresentation(title: "la police", synonyms: ["un contrôle", "la police"]),
+        .accident: DisplayRepresentation(title: "un accident", synonyms: ["accident"]),
+        .jam: DisplayRepresentation(title: "un bouchon", synonyms: ["bouchon", "un embouteillage"]),
+        .hazard: DisplayRepresentation(title: "un danger", synonyms: ["danger", "un obstacle"]),
+        .works: DisplayRepresentation(title: "des travaux", synonyms: ["travaux"]),
+    ]
+}
+
+struct ShellReportIntent: AppIntent {
+    static let title: LocalizedStringResource = "Signaler"
+    static let description = IntentDescription("Signale un évènement sur la route à ta position.")
+    static let openAppWhenRun = true
+
+    @Parameter(title: "Quoi")
+    var kind: ShellReportKind
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        await ShellLaunch.ready()
+        Bus.shared.emit(.custom(name: "shell:report", payload: ["kind": kind.rawValue]))
+        return .result(dialog: "Signalement prêt : il part dans 5 secondes, touche Annuler si besoin.")
     }
 }
 
@@ -89,6 +120,15 @@ struct ShellShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Signaler la police",
             systemImageName: "light.beacon.max.fill"
+        )
+        AppShortcut(
+            intent: ShellReportIntent(),
+            phrases: [
+                "Signaler \(\.$kind) avec \(.applicationName)",
+                "Signaler \(\.$kind) sur \(.applicationName)",
+            ],
+            shortTitle: "Signaler",
+            systemImageName: "exclamationmark.bubble.fill"
         )
         AppShortcut(
             intent: ShellStopDriveIntent(),
