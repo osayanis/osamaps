@@ -27,9 +27,9 @@ import { startWakeLock, startComfortEvents, startKeyboard } from "./comfort";
  *   rail      Réglages et Boussole (en haut, CSS order -10), Recentrer (en bas, CSS order 10)
  *   map       application du style clair / sombre / auto
  *   settings  « Général » (en haut, CSS order -10), « Accueil et données » + « À propos » (en bas, order 10)
- * Une seule entrée par slot : App.tsx utilise key={featureId}, deux entrées du même module dans un
- * slot auraient la même clé React. Les positions viennent de la propriété CSS `order` (les slots
- * rail et settings sont des colonnes flex) : les autres modules restent à order 0, entre les deux.
+ * Une seule entrée par slot (fragment) : les positions viennent de la propriété CSS `order` (les
+ * slots rail et settings sont des colonnes flex), les autres modules restent à order 0, entre les
+ * deux, quel que soit leur `order` de registre.
  * + PWA (manifest, service worker, installation), Wake Lock en conduite, raccourcis clavier,
  *   retours haptiques, agencement latéral sur grand écran (classe osa-side sur <html>).
  *
