@@ -50,10 +50,10 @@ export function fetchZones(bbox: [number, number, number, number]): Promise<Zone
   const key = bbox.map((v) => v.toFixed(2)).join(",");
   let p = zoneCache.get(key);
   if (!p) {
-    p = api<ZonesResponse>(`safety/zones?bbox=${key}`).catch((e) => {
-      zoneCache.delete(key);
-      throw e;
-    });
+    p = api<ZonesResponse>(`safety/zones?bbox=${key}`).then(
+      (r) => { if (!r.available) zoneCache.delete(key); return r; },
+      (e) => { zoneCache.delete(key); throw e; },
+    );
     zoneCache.set(key, p);
     if (zoneCache.size > 40) zoneCache.delete(zoneCache.keys().next().value!);
   }
@@ -62,10 +62,10 @@ export function fetchZones(bbox: [number, number, number, number]): Promise<Zone
 
 let zfePromise: Promise<ZfeResponse> | null = null;
 export function fetchZfe(): Promise<ZfeResponse> {
-  zfePromise ??= api<ZfeResponse>("safety/zfe").catch((e) => {
-    zfePromise = null;
-    throw e;
-  });
+  zfePromise ??= api<ZfeResponse>("safety/zfe").then(
+    (r) => { if (!r.available) zfePromise = null; return r; },
+    (e) => { zfePromise = null; throw e; },
+  );
   return zfePromise;
 }
 

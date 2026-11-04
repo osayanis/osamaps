@@ -73,21 +73,32 @@ async function analyze(route: Route | undefined) {
   useSafety.setState({ routeId: route.id, coords: route.coords, cum, dangers: [], pois: [], zfe: [], inside: null, along: 0, curves: findCurves(route, cum) });
   const myIx = ix;
 
-  Promise.all(splitBBox(routeBBox(route.coords)).map(fetchZones))
-    .then((rs) => {
-      if (ix !== myIx) return;
-      const zones = rs.flatMap((r) => r.zones);
-      const err = rs.find((r) => !r.available)?.error ?? null;
-      useSafety.setState({ dangers: dangerIntervals(myIx, zones), zonesError: err });
-    })
-    .catch((e) => useSafety.setState({ zonesError: String(e.message || e) }));
-
-  fetchZfe()
-    .then((r) => {
-      if (ix !== myIx) return;
-      useSafety.setState({ zfe: zfeCrossings(route.coords, cum, r.features), zfeError: r.available ? null : r.error });
-    })
-    .catch((e) => useSafety.setState({ zfeError: String(e.message || e) }));
+  // données serveur (avec nouvelles tentatives si le serveur vient de démarrer ou est injoignable)
+  const loadZones = (attempt: number) =>
+    Promise.all(splitBBox(routeBBox(route.coords)).map(fetchZones))
+      .then((rs) => {
+        if (ix !== myIx) return;
+        const err = rs.find((r) => !r.available)?.error ?? null;
+        useSafety.setState({ dangers: dangerIntervals(myIx, rs.flatMap((r) => r.zones)), zonesError: err });
+        if (err && attempt < 5) window.setTimeout(() => ix === myIx && loadZones(attempt + 1), 30000);
+      })
+      .catch((e) => {
+        useSafety.setState({ zonesError: String(e.message || e) });
+        if (attempt < 5) window.setTimeout(() => ix === myIx && loadZones(attempt + 1), 30000);
+      });
+  const loadZfe = (attempt: number) =>
+    fetchZfe()
+      .then((r) => {
+        if (ix !== myIx) return;
+        useSafety.setState({ zfe: zfeCrossings(route.coords, cum, r.features), zfeError: r.available ? null : r.error });
+        if (!r.available && attempt < 5) window.setTimeout(() => ix === myIx && loadZfe(attempt + 1), 30000);
+      })
+      .catch((e) => {
+        useSafety.setState({ zfeError: String(e.message || e) });
+        if (attempt < 5) window.setTimeout(() => ix === myIx && loadZfe(attempt + 1), 30000);
+      });
+  loadZones(0);
+  loadZfe(0);
 
   refreshPois(0);
 }

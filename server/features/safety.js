@@ -120,8 +120,9 @@ export async function register({ route, store, log }) {
       const r = ZONE_LENGTH[kind] / 2;
       const h = hmac("offset:" + id);
       const u = h.readUInt32BE(0) / 2 ** 32, v = h.readUInt32BE(4) / 2 ** 32;
-      // décalage uniforme dans un disque de rayon r/2 : l'appareil reste DANS la zone
-      const dist = 0.5 * r * Math.sqrt(v), ang = 2 * Math.PI * u;
+      // décalage uniforme dans une couronne de rayons 0,3·r/2 à r/2 : l'appareil reste DANS la zone,
+      // et le centre n'est jamais (par hasard) posé sur l'appareil
+      const dist = 0.5 * r * Math.sqrt(0.09 + 0.91 * v), ang = 2 * Math.PI * u;
       const dLat = (dist * Math.cos(ang)) / 111320;
       const dLng = (dist * Math.sin(ang)) / (111320 * Math.cos((lat * Math.PI) / 180));
       return {

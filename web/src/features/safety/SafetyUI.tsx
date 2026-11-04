@@ -1,9 +1,10 @@
+import { useEffect, useState } from "react";
 import { useCore } from "../../core/store";
 import { formatDistance } from "../../core/geometry";
 import { useSafety } from "./engine";
 import { answerPassenger, usePassenger } from "./passenger";
 import { CRITAIR_LABEL, critairForbidden, useSafetySettings, type CritAir, type SafetySettings } from "./settings";
-import { hoursFr } from "./data";
+import { fetchZfe, fetchZones, hoursFr } from "./data";
 
 /** Triangle de danger (SVG, trait 2 px, coins ronds). */
 function DangerIcon({ size = 22 }: { size?: number }) {
@@ -110,8 +111,26 @@ const TOGGLES: { key: keyof Omit<SafetySettings, "critair">; label: string; hint
   { key: "passenger", label: "Demander « Tu es passager ? »", hint: "quand tu tapes en roulant" },
 ];
 
+/** Dit honnêtement si les données publiques ne sont pas disponibles côté serveur. */
+function useDataStatus() {
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.allSettled([fetchZones([2.3, 46.5, 2.4, 46.6]), fetchZfe()]).then(([z, f]) => {
+      if (!alive) return;
+      const missing: string[] = [];
+      if (z.status === "rejected" || !z.value.available) missing.push("zones de danger");
+      if (f.status === "rejected" || !f.value.available) missing.push("ZFE");
+      setMsg(missing.length ? `Données indisponibles pour le moment : ${missing.join(" et ")}. Les autres alertes fonctionnent.` : null);
+    });
+    return () => { alive = false; };
+  }, []);
+  return msg;
+}
+
 export function SafetySettingsSection() {
   const s = useSafetySettings();
+  const status = useDataStatus();
   return (
     <section className="safety-settings card" aria-labelledby="safety-settings-title">
       <h3 id="safety-settings-title">Sécurité routière</h3>
@@ -152,6 +171,7 @@ export function SafetySettingsSection() {
         </label>
       ))}
 
+      {status && <p className="safety-settings-warn" role="status">{status}</p>}
       <p className="safety-settings-note">
         Conformément à la loi (décret n° 2012-3, art. R413-15 du Code de la route), OsaMaps ne montre jamais
         l'emplacement des radars : seulement des zones de danger, d'après la liste publique des radars fixes

@@ -74,6 +74,7 @@
 .safety-switch:checked { background: var(--text); }
 .safety-switch:checked::after { transform: translateX(18px); background: var(--ink); }
 .safety-switch:focus-visible, .safety-chip:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.safety-settings-warn { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-s); border: 1px solid rgba(255, 204, 0, 0.35); color: var(--text); font-size: 13px; line-height: 1.45; }
 .safety-settings-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
 
 @keyframes safety-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
