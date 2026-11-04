@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCore, core, type LngLat } from "../../core/store";
 import { usePrefs } from "../../core/prefs";
 import { nickname } from "../../core/identity";
@@ -143,22 +143,11 @@ function FriendsList() {
             {incoming.map((r) => (
               <div key={r.pid} className="friends-row">
                 <Avatar name={r.name ?? "?"} />
-                <div className="friends-row-text"><strong>{r.name}</strong><span>Code {prettyCode(r.code)}</span></div>
+                <div className="friends-row-text"><strong>{r.name}</strong><span>veut t'ajouter</span></div>
                 <button className="btn-ghost" onClick={() => void respond(r.pid, false)}>Refuser</button>
                 <button className="pill" onClick={() => void respond(r.pid, true)}>Accepter</button>
               </div>
             ))}
-          </div>
-        )}
-
-        {!shareLocation && friends.length > 0 && (
-          <div className="friends-hint card">
-            <IconLock />
-            <div>
-              <strong>Ta position n'est pas partagée</strong>
-              <span>Si tu l'actives, seuls tes amis acceptés te voient sur la carte. Rien n'est enregistré : ta position s'efface quelques minutes après ton dernier passage.</span>
-              <button className="pill secondary" onClick={() => setPref("shareLocation", true)}>Partager avec mes amis</button>
-            </div>
           </div>
         )}
 
@@ -178,6 +167,17 @@ function FriendsList() {
             </button>
           ))}
         </div>
+
+        {!shareLocation && friends.length > 0 && (
+          <div className="friends-hint card">
+            <IconLock />
+            <div>
+              <strong>Ta position n'est pas partagée</strong>
+              <span>Si tu l'actives, seuls tes amis acceptés te voient sur la carte. Rien n'est enregistré : ta position s'efface quelques minutes après ton dernier passage.</span>
+              <button className="pill secondary" onClick={() => setPref("shareLocation", true)}>Partager avec mes amis</button>
+            </div>
+          </div>
+        )}
 
         {outgoing.length > 0 && (
           <div className="friends-block">
@@ -203,6 +203,15 @@ function FriendDetail() {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const back = () => core().openPanel("friends");
+  const hasLoc = !!friend?.loc;
+  // à l'ouverture, la carte va voir où il est
+  useEffect(() => {
+    const f = useFriends.getState().friends.find((x) => x.pid === pid);
+    const map = core().map;
+    if (!f?.loc || !map) return;
+    core().set({ follow: false });
+    map.easeTo({ center: [f.loc.lng, f.loc.lat], zoom: Math.max(map.getZoom(), 13), padding: { top: 0, bottom: 300, left: 0, right: 0 }, duration: 600 });
+  }, [pid, hasLoc]);
   if (!friend) return (<><Head title="Ami" back={back} /><p className="friends-muted">Cet ami n'est plus dans ta liste.</p></>);
 
   const loc = friend.loc;

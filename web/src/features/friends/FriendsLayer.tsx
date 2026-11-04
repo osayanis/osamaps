@@ -61,7 +61,7 @@ function paint(el: HTMLDivElement, f: Friend, mapBearing: number) {
   el.classList.toggle("is-driving", driving);
   el.setAttribute("aria-label", `${f.name}, ${driving ? "en route" : "position partagée"}`);
   const cap = loc.heading != null && (loc.speed ?? 0) > 0.5
-    ? `<span class="friends-marker-cap" style="transform:rotate(${loc.heading - mapBearing}deg)"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M22 2l6 9h-12z" fill="currentColor"/></svg></span>`
+    ? `<span class="friends-marker-cap" style="transform:rotate(${loc.heading - mapBearing}deg)"><svg width="60" height="60" viewBox="0 0 60 60"><path d="M30 1.5l6.5 8h-13z" fill="currentColor"/></svg></span>`
     : "";
   el.innerHTML = `${cap}<span class="friends-marker-dot">${escape(initials(f.name))}</span><span class="friends-marker-label">${escape(label)}</span>`;
 }

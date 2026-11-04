@@ -75,7 +75,7 @@ export async function register({ io, route, store, log }) {
 
   const limits = {
     hello: limiter(10, 60_000),
-    newDevice: limiter(20, 3600_000), // par IP, mémoire seulement
+    newDevice: limiter(60, 3600_000), // par IP, mémoire seulement (les réseaux mobiles partagent une IP)
     add: limiter(10, 60_000),        // par appareil : évite de deviner les codes
     addIp: limiter(30, 60_000),      // par IP, mémoire seulement
     helloIp: limiter(60, 60_000),

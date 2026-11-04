@@ -161,6 +161,7 @@ export function FollowLayer() {
       c.heading = trip.pos?.heading ?? (c.from[0] !== p[0] || c.from[1] !== p[1] ? bearing(c.from, p) : c.heading);
     }
     car.current.el.classList.toggle("is-arrived", !!trip.arrivedAt);
+    dest.current.getElement().style.display = trip.arrivedAt ? "none" : "";
   }, [map, trip]);
 
   // animation continue (≈ 2 s entre deux mises à jour du conducteur)
@@ -249,7 +250,7 @@ export function FollowOverlay() {
               </>
             )}
             {state === "ended" && <p className="friends-muted">{message}</p>}
-            <p className="friends-follow-foot">Vue en lecture seule · le lien s'arrête 30 min après l'arrivée</p>
+            <p className="friends-follow-foot">Lecture seule · expire 30 min après l'arrivée</p>
           </>
         )}
       </div>
