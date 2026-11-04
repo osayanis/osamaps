@@ -17,7 +17,8 @@
 
 /* ---------- aperçu : ZFE ---------- */
 .safety-zfe {
-  display: flex; align-items: center; gap: 12px; margin: 0 12px 8px; padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  width: calc(min(560px, 100%) - 24px) !important; margin: 0 12px calc(8px + var(--safe-bottom));
   background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   animation: safety-in 220ms var(--ease-out);
 }
@@ -54,7 +55,7 @@
 .safety-settings-label { font-weight: 600; font-size: 15px; }
 .safety-settings-hint { font-size: 12.5px; color: var(--faint); }
 .safety-settings-critair { flex-direction: column; align-items: stretch; cursor: default; padding: 10px 0; }
-.safety-chips { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.safety-settings-row > .safety-chips { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-top: 4px; }
 .safety-chip {
   height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
   font-weight: 700; font-size: 14px; cursor: pointer; transition: transform 140ms var(--ease-out), background 140ms var(--ease-out);

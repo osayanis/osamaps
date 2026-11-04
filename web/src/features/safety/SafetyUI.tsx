@@ -63,7 +63,7 @@ export function SafetySheet() {
     <div className={`safety-zfe card ${forbidden ? "is-forbidden" : ""}`}>
       <span className="safety-zfe-icon"><LeafIcon /></span>
       <div className="safety-zfe-text">
-        <strong>{forbidden ? `${CRITAIR_LABEL[critair]} non autorisée` : "Ce trajet traverse une ZFE"}</strong>
+        <strong>{forbidden ? `${CRITAIR_LABEL[critair]} non autorisée dans la ZFE` : "Ce trajet traverse une ZFE"}</strong>
         <span>
           {z.props.name}
           {hours ? ` · ${hours}` : ""}

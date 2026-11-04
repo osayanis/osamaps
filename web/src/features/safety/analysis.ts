@@ -8,7 +8,7 @@ import { inMultiPolygon } from "./data";
  */
 
 export interface DangerInterval { id: string; start: number; end: number; kind: DangerZone["kind"] }
-export interface Curve { id: string; start: number; end: number; radius: number; angle: number }
+export interface Curve { id: string; start: number; end: number; radius: number; angle: number; /** Virages enchaînés (lacets). */ count: number }
 export interface RoutePoi { id: string; along: number; kind: "level-crossing" | "school" }
 export interface ZfeCrossing { entry: number; exit: number; props: ZfeProps }
 
@@ -194,7 +194,15 @@ export function findCurves(route: Route, cum: number[]): Curve[] {
     for (let q = i; q < k + W && q + 1 < head.length; q++) angle += angleDiff(head[q], head[q + 1]);
     const start = i * STEP, end = (k + W) * STEP;
     if (Math.abs(angle) >= 40 && !isExcluded(start, end)) {
-      curves.push({ id: `${route.id}-c${Math.round(start)}`, start, end, radius: Math.round(minR), angle: Math.round(angle) });
+      const prev = curves[curves.length - 1];
+      if (prev && start - prev.end < 200) {
+        // virages enchaînés : une seule alerte « Virages serrés »
+        prev.end = end;
+        prev.radius = Math.min(prev.radius, Math.round(minR));
+        prev.count++;
+      } else {
+        curves.push({ id: `${route.id}-c${Math.round(start)}`, start, end, radius: Math.round(minR), angle: Math.round(angle), count: 1 });
+      }
     }
     i = k + W;
   }

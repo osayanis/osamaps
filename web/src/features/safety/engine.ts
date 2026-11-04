@@ -153,8 +153,9 @@ function onTick() {
   if (set.curves && speed >= 55 / 3.6) {
     for (const c of st.curves) {
       const d = c.start - along;
-      if (d >= 0 && d <= 350 && (speed * speed) / c.radius > 3.5) {
-        alert(`safety-curve-${c.id}`, "sharp-curve", `Virage serré dans ${formatDistance(Math.max(50, Math.round(d / 50) * 50))}`, d, "info");
+      if (d >= 0 && d <= 320 && (speed * speed) / c.radius > 3.5) {
+        const label = c.count > 1 ? "Virages serrés" : "Virage serré";
+        alert(`safety-curve-${c.id}`, "sharp-curve", `${label} dans ${formatDistance(Math.max(50, Math.round(d / 50) * 50))}`, d, "info");
       }
     }
   }
@@ -204,7 +205,7 @@ let nightReminders = 0;
 let lastNightCheck = 0;
 export function nightCheck(now = new Date()) {
   const t = now.getTime();
-  const dt = lastNightCheck ? Math.min(t - lastNightCheck, 5 * 60000) : 0;
+  const dt = lastNightCheck ? Math.max(0, Math.min(t - lastNightCheck, 5 * 60000)) : 0;
   lastNightCheck = t;
   const { mode, position } = core();
   const h = now.getHours();

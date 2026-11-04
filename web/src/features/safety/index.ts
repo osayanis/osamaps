@@ -4,6 +4,7 @@ import { SafetyLayers } from "./SafetyLayers";
 import { PassengerOverlay, SafetyHud, SafetySettingsSection, SafetySheet } from "./SafetyUI";
 import { nightCheck, startSafetyEngine, useSafety } from "./engine";
 import { startPassengerWatch } from "./passenger";
+import { useSafetySettings } from "./settings";
 
 /**
  * Sécurité routière : zones de danger (légales), ZFE, virages serrés, passages à niveau, écoles,
@@ -24,7 +25,7 @@ export const safety: Feature = {
     const b = startPassengerWatch();
     // débogage / tests headless
     const w = window as unknown as { osamaps?: Record<string, unknown> };
-    if (w.osamaps) w.osamaps.safety = { ...(w.osamaps.safety as object), state: () => useSafety.getState(), nightCheck };
+    if (w.osamaps) w.osamaps.safety = { ...(w.osamaps.safety as object), state: () => useSafety.getState(), settings: useSafetySettings, nightCheck };
     return () => { a(); b(); };
   },
 };
