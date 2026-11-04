@@ -64,7 +64,12 @@ struct FriendsList: View {
         FriendsHead(title: "Amis")
 
         if store.status == .error {
-            Text(store.error ?? "Connexion impossible.").font(.osa(14, .medium)).foregroundStyle(Osa.jam)
+            HStack(spacing: 8) {
+                Text(store.error ?? "Connexion impossible.").font(.osa(14, .medium)).foregroundStyle(Osa.jam)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                FriendsGhostButton("Réessayer") { store.reconnect() }
+            }
         } else if store.status != .ready {
             HStack(spacing: 8) { ProgressView().tint(Osa.dim); Text("Connexion…") }
                 .font(.osa(14, .medium)).foregroundStyle(Osa.dim)

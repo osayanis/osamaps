@@ -6,18 +6,24 @@ import Security
 enum FriendsKeychain {
     private static let service = "fr.osalabs.osamaps.friends"
     private static let account = "device-secret"
-    private static let pattern = /^[A-Za-z0-9_-]{32,128}$/
+    /// Format accepté par le serveur : 32 à 128 caractères [A-Za-z0-9_-].
+    private static func valid(_ s: String) -> Bool {
+        (32...128).contains(s.count) && s.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "_" || $0 == "-") }
+    }
 
     /// Le secret, créé au premier appel (64 caractères hexadécimaux, aléatoires).
-    static func secret() -> String {
-        if let s = read(), s.wholeMatch(of: pattern) != nil { return s }
-        var bytes = [UInt8](repeating: 0, count: 32)
-        if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
-            bytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
+    /// nil si le trousseau est momentanément illisible (appareil pas encore déverrouillé…) : surtout ne PAS
+    /// en recréer un dans ce cas, l'ancien serait écrasé et l'identité perdue. On réessaiera à la reconnexion.
+    static func secret() -> String? {
+        switch read() {
+        case .found(let s) where valid(s): return s
+        case .failed: return nil
+        case .found, .missing:
+            var bytes = [UInt8](repeating: 0, count: 32)
+            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return nil }
+            let s = bytes.map { String(format: "%02x", $0) }.joined()
+            return write(s) ? s : nil
         }
-        let s = bytes.map { String(format: "%02x", $0) }.joined()
-        write(s)
-        return s
     }
 
     /// « Supprimer mes données » : on oublie le secret (un nouveau sera créé).
@@ -31,13 +37,20 @@ enum FriendsKeychain {
          kSecAttrAccount as String: account]
     }
 
-    private static func read() -> String? {
+    private enum ReadResult { case found(String), missing, failed }
+
+    private static func read() -> ReadResult {
         var q = base
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(q as CFDictionary, &out)
+        if status == errSecItemNotFound { return .missing }
+        guard status == errSecSuccess, let data = out as? Data else {
+            print("OsaMaps friends: trousseau illisible (\(status))")
+            return .failed
+        }
+        return .found(String(decoding: data, as: UTF8.self))
     }
 
     @discardableResult

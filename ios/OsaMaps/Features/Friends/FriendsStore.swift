@@ -144,15 +144,32 @@ final class FriendsStore {
         }
     }
 
-    private func hello() async {
+    /// Identifiant d'appareil pour les amis : celui du Core, sauf si le module a dû en reprendre un neuf
+    /// (secret perdu : restauration sur un autre iPhone, le secret « ThisDeviceOnly » ne suit pas).
+    private var deviceId: String { Store.load("friends.deviceId", default: Optional<String>.none) ?? Identity.deviceId }
+
+    private func hello(retry: Bool = true) async {
         status = .connecting
         error = nil
+        guard let secret = FriendsKeychain.secret() else {
+            status = .error
+            error = "Trousseau indisponible pour l'instant. Déverrouille ton iPhone puis réessaie."
+            return
+        }
         let r = await call("friends:hello", [
-            "deviceId": Identity.deviceId,
-            "secret": FriendsKeychain.secret(),
+            "deviceId": deviceId,
+            "secret": secret,
             "name": Identity.nickname,
             "code": Store.load("friends.code", default: Optional<String>.none) ?? Identity.friendCode,
         ])
+        if !r.ok, r.error == "secret invalide", retry {
+            // cet identifiant appartient à un secret qu'on n'a plus : on repart d'un appareil neuf (amis à réinviter)
+            Store.save("friends.deviceId", UUID().uuidString.lowercased())
+            FriendsKeychain.reset()
+            Store.remove("friends.code")
+            await hello(retry: false)
+            return
+        }
         guard r.ok else {
             status = .error
             error = r.error ?? "Connexion impossible."
@@ -167,6 +184,9 @@ final class FriendsStore {
             Core.shared.openPanel("friends-invite", data: code)
         }
     }
+
+    /// Nouvel essai manuel (bouton « Réessayer »).
+    func reconnect() { Task { await hello() } }
 
     private func applyState(_ json: Any?, notify: Bool) {
         guard let j = json as? [String: Any] else { return }
@@ -390,11 +410,22 @@ final class FriendsStore {
                 emit(.toast(Toast(text: "C'est ton propre code ami", tone: .info)))
                 return
             }
+            #if DEBUG
+            // tests dans le Simulateur (pas de toucher possible) : osamaps://ami/CODE?test=send envoie la demande
+            if q["test"] == "send" {
+                Task {
+                    for _ in 0..<40 where status != .ready { try? await Task.sleep(for: .milliseconds(250)) }
+                    _ = await addFriend(code)
+                    Core.shared.openPanel("friends")
+                }
+                return
+            }
+            #endif
             if status == .ready || me != nil { Core.shared.openPanel("friends-invite", data: code) }
             else { pendingInvite = code; Core.shared.openPanel("friends-invite", data: code) }
         case "suivre":
             let token = (isApp ? (path.first ?? q["token"] ?? "") : (q["suivre"] ?? "")).lowercased()
-            guard token.wholeMatch(of: /^[0-9a-f-]{36}$/) != nil else { return }
+            guard token.count == 36, token.allSatisfy({ $0 == "-" || $0.isHexDigit }) else { return }
             FriendsFollow.shared.open(token)
         default: break
         }
