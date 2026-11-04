@@ -1,0 +1,240 @@
+/* ——— Shell d'OsaMaps : accueil, toasts, rail, réglages, agencement ———————————————————— */
+
+/* ——— Toasts + bannière hors ligne ——————————————————————————————————————————————— */
+.slot .shell-toasts {
+  position: fixed; left: 12px; right: 12px; z-index: 70;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.shell-toasts > * { width: min(440px, 100%); }
+.shell-toast-area { position: relative; height: 0; }
+.shell-toast-slot {
+  position: absolute; top: 0; left: 0; right: 0;
+  transition: transform 260ms var(--ease-out);
+  will-change: transform;
+}
+.shell-toast {
+  pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px; border-radius: var(--radius-m);
+  animation: shell-toast-in 300ms var(--ease-out) both;
+  transition: transform 220ms var(--ease-out), opacity 220ms var(--ease-out);
+}
+.shell-toast.leaving { pointer-events: none; animation: shell-toast-out-up 200ms var(--ease-out) forwards; }
+.shell-toast.leaving.exit-left { animation-name: shell-toast-out-left; }
+.shell-toast.leaving.exit-right { animation-name: shell-toast-out-right; }
+@keyframes shell-toast-in { from { opacity: 0; transform: translateY(-16px) scale(0.96); } }
+@keyframes shell-toast-out-up {
+  from { transform: translate(var(--from-x, 0px), var(--from-y, 0px)); }
+  to { opacity: 0; transform: translate(var(--from-x, 0px), calc(var(--from-y, 0px) - 24px)) scale(0.96); }
+}
+@keyframes shell-toast-out-left {
+  from { transform: translateX(var(--from-x, 0px)); }
+  to { opacity: 0; transform: translateX(-110%); }
+}
+@keyframes shell-toast-out-right {
+  from { transform: translateX(var(--from-x, 0px)); }
+  to { opacity: 0; transform: translateX(110%); }
+}
+.shell-toast-icon { flex: none; width: 22px; height: 22px; display: grid; place-items: center; margin-top: 1px; color: var(--dim); }
+.shell-toast.tone-good .shell-toast-icon { color: var(--ok); }
+.shell-toast.tone-warn .shell-toast-icon { color: var(--danger); }
+.shell-toast-glyph { font-size: 17px; line-height: 1; }
+.shell-toast-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+.shell-toast-text > span { font-size: 15px; font-weight: 650; line-height: 1.3; }
+.shell-toast-text small { font-size: 13px; color: var(--dim); line-height: 1.35; font-weight: 500; }
+.shell-toast-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.shell-toast-btn { min-height: 36px; padding: 6px 14px; font-size: 14px; }
+.shell-toast-close {
+  flex: none; width: 32px; height: 32px; margin: -4px -6px -4px 0; border: 0; border-radius: 50%;
+  background: none; color: var(--faint); display: grid; place-items: center; cursor: pointer;
+}
+.shell-toast-close:hover { color: var(--text); background: var(--surface); }
+
+.shell-offline {
+  pointer-events: auto; display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-radius: var(--radius-m); font-size: 14px; line-height: 1.35; color: var(--dim);
+  animation: shell-toast-in 300ms var(--ease-out) both;
+}
+.shell-offline svg { flex: none; color: var(--slow); margin-top: 1px; }
+.shell-offline b { color: var(--text); font-weight: 700; }
+
+/* ——— Rail ——————————————————————————————————————————————————————————————————————— */
+.shell-rail-top { order: -10; }
+.shell-rail-bottom { order: 10; }
+.shell-rail-btn { animation: shell-pop 220ms var(--ease-out) both; color: var(--text); }
+@keyframes shell-pop { from { opacity: 0; transform: scale(0.85); } }
+.shell-compass svg { transition: transform 120ms linear; }
+.shell-compass-n { color: var(--jam); }
+.pill.shell-recenter-pill { color: var(--ink); min-height: 52px; padding: 0 20px; font-size: 16px; box-shadow: var(--shadow); }
+@media (hover: hover) { .round.shell-rail-btn:hover { border-color: var(--line-hi); } }
+
+/* ——— Accueil ———————————————————————————————————————————————————————————————————— */
+.shell-ob {
+  position: fixed; inset: 0; z-index: 60; outline: none;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center;
+  padding: calc(10px + var(--safe-top)) 20px calc(16px + var(--safe-bottom));
+  background: rgba(10, 10, 15, 0.94);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  animation: fade-in 240ms var(--ease-out) both;
+}
+.shell-ob > * { width: min(460px, 100%); }
+.shell-ob.leaving { animation: shell-ob-out 260ms var(--ease-out) forwards; pointer-events: none; }
+@keyframes shell-ob-out { to { opacity: 0; transform: scale(1.03); } }
+
+.shell-ob-top { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.shell-ob-dots { display: flex; gap: 2px; margin-left: -10px; }
+.shell-ob-dot { width: 26px; height: 32px; border: 0; padding: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+.shell-ob-dot::after {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text);
+  opacity: 0.22; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+.shell-ob-dot.done::after { opacity: 0.5; }
+.shell-ob-dot.on::after { opacity: 1; transform: scale(1.3); }
+
+.shell-ob-page { align-self: center; overflow-y: auto; max-height: 100%; padding: 12px 0; scrollbar-width: none; }
+.shell-ob-page > * { animation: shell-ob-in-fwd 320ms var(--ease-out) both; }
+.shell-ob-page.back > * { animation-name: shell-ob-in-back; }
+@keyframes shell-ob-in-fwd { from { opacity: 0; transform: translateX(28px); } }
+@keyframes shell-ob-in-back { from { opacity: 0; transform: translateX(-28px); } }
+
+.shell-ob-title { margin: 0 0 14px; font-size: clamp(30px, 8.6vw, 40px); line-height: 1.08; font-weight: 800; letter-spacing: -0.025em; }
+.shell-ob-word { display: inline-block; animation: shell-ob-word 460ms var(--ease-out) both; }
+@keyframes shell-ob-word { from { opacity: 0; transform: translateY(0.4em); } }
+.st { animation: shell-ob-rise 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+@keyframes shell-ob-rise { from { opacity: 0; transform: translateY(10px); } }
+
+.shell-ob-mark { margin-bottom: 30px; width: 88px; height: 88px; border-radius: 22px; animation: shell-ob-mark 560ms var(--ease-out) both; }
+.shell-ob-mark svg { display: block; }
+@keyframes shell-ob-mark { from { opacity: 0; transform: scale(0.82) translateY(8px); } }
+.shell-ob-lead { margin: 0; font-size: 17px; line-height: 1.5; color: var(--dim); font-weight: 500; }
+.shell-ob-sign { display: inline-flex; align-items: center; gap: 6px; margin: 22px 0 0; font-size: 13px; font-weight: 700; color: var(--faint); letter-spacing: 0.02em; }
+
+.shell-ob-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.shell-ob-item, .shell-ob-perm { display: flex; align-items: flex-start; gap: 14px; padding: 16px; }
+.shell-ob-item b, .shell-ob-perm b { display: block; font-size: 15.5px; font-weight: 700; margin-bottom: 3px; }
+.shell-ob-item p, .shell-ob-perm p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--dim); }
+.shell-ob-item-icon { flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--surface-hi); display: grid; place-items: center; color: var(--text); }
+.shell-ob-perm { cursor: default; }
+label.shell-ob-perm { cursor: pointer; }
+.shell-ob-perm-body { flex: 1; min-width: 0; }
+.shell-ob-perm-action { margin-top: 12px; }
+.shell-ob-perm-action .pill { min-height: 42px; }
+.shell-ob-perm-action .pill:disabled { opacity: 0.6; cursor: default; }
+.shell-ob-state { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 650; }
+.shell-ob-state.good { color: var(--ok); }
+.shell-ob-state.warn { color: var(--danger); }
+.shell-ob-note { margin: 14px 2px 0; font-size: 13px; color: var(--faint); }
+
+.shell-ob-form { margin: 6px 0 0; }
+.shell-ob-input {
+  width: 100%; height: 56px; padding: 0 18px; border-radius: 16px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 19px; font-weight: 650; outline: none;
+  transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out);
+}
+.shell-ob-input::placeholder { color: var(--faint); }
+.shell-ob-input:focus { border-color: var(--line-hi); background: var(--surface-hi); }
+.shell-ob-form p { margin: 10px 2px 0; font-size: 14px; color: var(--dim); line-height: 1.45; }
+.shell-ob-code { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; margin-top: 18px; }
+.shell-ob-code span { font-size: 14px; color: var(--dim); font-weight: 600; }
+.shell-ob-code b { font-size: 20px; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
+
+.shell-ob-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; }
+.shell-ob-back { display: inline-flex; align-items: center; gap: 2px; min-height: 48px; padding-left: 4px; }
+.shell-ob-next { min-height: 54px; padding: 0 22px 0 26px; font-size: 16.5px; }
+
+/* interrupteur Osa : blanc + rond noir quand activé (la couleur reste réservée aux états) */
+.shell-switch {
+  flex: none; position: relative; width: 52px; height: 32px; border-radius: 999px; border: 0; padding: 0;
+  background: var(--surface-hi); cursor: pointer; transition: background 180ms var(--ease-out);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.shell-switch span {
+  position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7); transition: transform 200ms var(--ease-out), background 180ms var(--ease-out);
+}
+.shell-switch.on { background: var(--text); }
+.shell-switch.on span { transform: translateX(20px); background: var(--ink); }
+.shell-ob-perm .shell-switch { align-self: center; }
+
+@media (max-height: 560px) {
+  .shell-ob-title { font-size: 26px; margin-bottom: 10px; }
+  .shell-ob-mark { width: 56px; height: 56px; margin-bottom: 14px; border-radius: 14px; }
+  .shell-ob-mark svg { width: 56px; height: 56px; }
+  .shell-ob-lead { font-size: 15px; }
+  .shell-ob-item, .shell-ob-perm { padding: 12px 14px; }
+  .shell-ob-page { align-self: start; }
+}
+@media (max-height: 560px) and (min-width: 700px) {
+  .shell-ob > * { width: min(720px, 100%); }
+  .shell-ob-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+}
+
+/* ——— Réglages ————————————————————————————————————————————————————————————————————— */
+.shell-set.top { order: -10; }
+.shell-set.bottom { order: 10; }
+.shell-set h3 { margin: 6px 4px 8px; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.shell-set-card { overflow: hidden; }
+.shell-set-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 58px; padding: 13px 16px;
+  border: 0; background: none; color: var(--text); text-align: left; text-decoration: none; font: inherit;
+}
+.shell-set-row + .shell-set-row { border-top: 1px solid var(--line); }
+.shell-set-row.clickable { cursor: pointer; transition: background 140ms var(--ease-out); }
+.shell-set-row.clickable:hover { background: var(--surface); }
+.shell-set-row.clickable:active { background: var(--surface-hi); }
+.shell-set-row.clickable > svg { flex: none; color: var(--dim); }
+.shell-set-row.column { flex-direction: column; align-items: stretch; }
+.shell-set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.shell-set-text > span { font-size: 15.5px; font-weight: 650; }
+.shell-set-text > span.danger { color: var(--jam); }
+.shell-set-text small { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.shell-set-value { color: var(--dim); font-weight: 650; font-size: 14.5px; white-space: nowrap; }
+
+.shell-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; margin-top: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.shell-seg-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; border: 0; border-radius: 10px;
+  background: none; color: var(--dim); font-weight: 650; font-size: 14.5px; cursor: pointer;
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out), transform 140ms var(--ease-out);
+}
+.shell-seg-btn:active { transform: scale(0.97); }
+.shell-seg-btn.on { background: var(--text); color: var(--ink); }
+
+.shell-set-about { padding: 16px 0 4px; }
+.shell-set-about-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 16px; }
+.shell-set-about-head b { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+.shell-set-about-head span { color: var(--dim); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shell-set-made { display: flex; align-items: center; gap: 6px; margin: 4px 16px 10px; color: var(--dim); font-size: 14px; font-weight: 600; }
+.shell-set-about .shell-set-row { border-top: 1px solid var(--line); }
+.shell-set-credits { border-top: 1px solid var(--line); padding: 12px 16px 10px; }
+.shell-set-credits p { margin: 0 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--faint); }
+.shell-set-credits a { color: var(--dim); text-underline-offset: 2px; }
+
+/* ——— Rail au-dessus du panneau du bas (mobile) ———————————————————————————————————— */
+/* Le socle place le rail à 180 px du bas ; ici il suit la hauteur réelle du panneau (mesurée
+   dans layout.ts), sans dépasser la moitié de l'écran, et reste au-dessus de l'attribution.
+   `bottom` plutôt que transform : un transform ferait du rail le repère des éléments
+   position:fixed que d'autres modules pourraient y mettre (menus, bulles). */
+html.osa-stack .slot-rail {
+  bottom: calc(12px + var(--safe-bottom) + min(max(var(--shell-sheet-h, 168px), 28px), 50vh));
+  transition: bottom 280ms var(--ease-drawer);
+}
+
+/* ——— Agencement latéral (grand écran, téléphone en paysage) ————————————————————— */
+/* Le panneau du bas devient une colonne à gauche ; la recherche et le HUD s'y alignent. */
+html.osa-side { --shell-col: min(400px, 46vw); }
+html.osa-side .slot-top { right: auto; width: var(--shell-col); max-width: none; z-index: 2; }
+html.osa-side .slot-hud { right: auto; width: var(--shell-col); }
+html.osa-side .slot-sheet {
+  left: 12px; right: auto; width: var(--shell-col); align-items: stretch;
+  max-height: calc(100% - 84px - var(--safe-top)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+html.osa-side .slot-sheet > * { width: 100%; }
+html.osa-side .slot-rail { bottom: calc(36px + var(--safe-bottom)); }
+html.osa-side .slot .shell-toasts { left: calc(var(--shell-col) + 24px); }
+html.osa-side .mode-drive .slot-sheet { max-height: 45%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-toast-slot, .shell-compass svg { transition: none; }
+  .shell-ob-word, .st, .shell-ob-mark, .shell-ob-page > * { animation: none; }
+}

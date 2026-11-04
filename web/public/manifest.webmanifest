@@ -1,0 +1,22 @@
+{
+  "name": "OsaMaps",
+  "short_name": "OsaMaps",
+  "description": "La navigation de la suite Osa : itinéraires, signalements de la communauté, amis et trafic en direct.",
+  "lang": "fr",
+  "dir": "ltr",
+  "id": "/maps/",
+  "start_url": "/maps/",
+  "scope": "/maps/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "categories": ["navigation", "travel", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
