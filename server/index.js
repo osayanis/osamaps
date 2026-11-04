@@ -12,7 +12,7 @@ const router = createRouter("/maps/api");
 const http = createServer((req, res) => router.handle(req, res));
 const io = new Server(http, {
   path: "/maps/socket.io",
-  cors: { origin: ["https://osalabs.fr", "http://localhost:5175"] },
+  cors: { origin: ["https://osalabs.fr", "https://www.osalabs.fr", /^http:\/\/localhost:\d+$/] },
   maxHttpBufferSize: 64 * 1024,
 });
 const store = createStore(new URL("./data/", import.meta.url));
