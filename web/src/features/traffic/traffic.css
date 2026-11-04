@@ -1,0 +1,59 @@
+/* Trafic en direct — la couleur ne dit que l'état : --ok fluide, --slow ralenti, --jam bouchon. */
+
+.traffic-rail { color: var(--dim); }
+.traffic-rail.is-on { background: var(--text); color: var(--ink); border-color: transparent; }
+
+/* HUD de conduite : « +5 min de trafic » */
+.traffic-hud {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-radius: 999px;
+  font-weight: 700; font-size: 15px;
+  animation: traffic-in 220ms var(--ease-out);
+}
+.traffic-hud-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--slow); flex: none; }
+.traffic-hud.traffic-jam .traffic-hud-dot { background: var(--jam); }
+.traffic-hud-sub { color: var(--dim); font-weight: 600; font-size: 14px; }
+
+/* Fiche (évènement / tronçon) */
+.traffic-sheet {
+  margin: 0 0 calc(12px + var(--safe-bottom));
+  padding: 14px 16px 12px;
+  border-radius: var(--radius-l);
+  display: flex; flex-direction: column; gap: 8px;
+  animation: traffic-up 260ms var(--ease-out);
+}
+.slot-sheet > .traffic-sheet { width: min(560px, calc(100% - 24px)); }
+.traffic-sheet-head { display: flex; align-items: center; gap: 12px; }
+.traffic-sheet-badge { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-hi); flex: none; }
+.traffic-sheet-titles { flex: 1; min-width: 0; }
+.traffic-sheet-titles h3 { margin: 0; font-size: 17px; font-weight: 750; }
+.traffic-sheet-titles p { margin: 2px 0 0; color: var(--dim); font-size: 14px; font-weight: 600; }
+.traffic-sheet-line { margin: 0; font-size: 14px; line-height: 1.4; }
+.traffic-sheet-dim { color: var(--dim); white-space: pre-line; }
+.traffic-sheet-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; font-weight: 600; }
+
+/* Réglages */
+.traffic-settings { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.traffic-settings h3 { margin: 0; font-size: 17px; }
+.traffic-row { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
+.traffic-row strong { font-size: 15px; }
+.traffic-row p { margin: 3px 0 0; color: var(--dim); font-size: 13px; line-height: 1.4; }
+.traffic-switch {
+  flex: none; width: 52px; height: 32px; border-radius: 999px; border: 1px solid var(--line-hi);
+  background: var(--surface-hi); position: relative; cursor: pointer; padding: 0;
+  transition: background 200ms var(--ease-out);
+}
+.traffic-switch-knob {
+  position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--dim); transition: transform 200ms var(--ease-out), background 200ms var(--ease-out);
+}
+.traffic-switch.is-on { background: var(--text); border-color: transparent; }
+.traffic-switch.is-on .traffic-switch-knob { transform: translateX(20px); background: var(--ink); }
+.traffic-details summary { cursor: pointer; font-weight: 650; font-size: 14px; color: var(--dim); }
+.traffic-details ul { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.45; color: var(--dim); }
+.traffic-sent { margin: 10px 0 0; font-size: 13px; color: var(--text); font-weight: 600; }
+.traffic-credit { margin: 0; font-size: 12px; line-height: 1.45; color: var(--faint); }
+
+@keyframes traffic-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes traffic-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
