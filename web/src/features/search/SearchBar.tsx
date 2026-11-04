@@ -203,7 +203,7 @@ export function SearchBar() {
                 key={c.id}
                 className={`search-chip${on ? " is-on" : ""}`}
                 aria-pressed={on}
-                onClick={() => (on ? closeCategory() : runCategory(c.id))}
+                onClick={(e) => { e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" }); if (on) closeCategory(); else runCategory(c.id); }}
               >
                 <Icon name={c.icon} size={16} />
                 {c.label}
@@ -218,7 +218,7 @@ export function SearchBar() {
           {picking && (
             <div className="search-picking">
               <Icon name={picking === "favorite" ? "star" : picking} size={16} />
-              <span>{PICK_LABEL[picking]} : cherchez une adresse, ou appui long sur la carte.</span>
+              <span>Cherchez une adresse, ou faites un appui long sur la carte.</span>
             </div>
           )}
           {!q && !rows.length && !picking && (
