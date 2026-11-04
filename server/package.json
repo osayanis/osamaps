@@ -1,0 +1,8 @@
+{
+  "name": "osamaps-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "node index.js", "dev": "node --watch index.js" },
+  "dependencies": { "socket.io": "^4.8.1" }
+}

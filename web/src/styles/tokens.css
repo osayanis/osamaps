@@ -1,0 +1,43 @@
+/*
+ * Les couleurs et formes de la suite Osa : sobres comme OsaWallpaper / OsaHUB.
+ * Fond quasi noir, blanc à différentes opacités, police système/Inter en gras, pilules blanches
+ * à texte noir, cartes blanc 5 % + trait 8 %. La couleur ne sert qu'à dire un ÉTAT :
+ * trafic (vert/orange/rouge), danger, police, succès. Jamais de dégradés colorés décoratifs.
+ */
+:root {
+  --bg: #0a0a0f;
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-hi: rgba(255, 255, 255, 0.08);
+  --glass: rgba(14, 14, 20, 0.78);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-hi: rgba(255, 255, 255, 0.16);
+  --text: rgba(255, 255, 255, 0.95);
+  --dim: rgba(255, 255, 255, 0.58);
+  --faint: rgba(255, 255, 255, 0.38);
+  --ink: #000;
+
+  /* états */
+  --ok: #34c759;
+  --slow: #ff9f0a;
+  --jam: #ff453a;
+  --police: #5aa9ff;
+  --danger: #ffcc00;
+  --route: #ffffff;
+  --route-alt: rgba(255, 255, 255, 0.35);
+
+  --radius-s: 10px;
+  --radius-m: 16px;
+  --radius-l: 24px;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --blur: saturate(160%) blur(22px);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: dark;
+}
