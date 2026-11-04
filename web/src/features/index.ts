@@ -5,6 +5,7 @@ import { guidance } from "./guidance";
 import { mascot } from "./mascot";
 import { searchFeature } from "./search";
 import { traffic } from "./traffic";
+import { routingFeature } from "./routing";
 
 /**
  * Les fonctionnalités d'OsaMaps. Chaque module ajoute SA ligne d'import et son entrée dans la
@@ -17,4 +18,5 @@ export const FEATURES: Feature[] = [
   mascot,
   searchFeature,
   traffic,
+  routingFeature,
 ];
