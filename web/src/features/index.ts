@@ -3,6 +3,7 @@ import { reportsFeature } from "./reports";
 import { friends } from "./friends";
 import { guidance } from "./guidance";
 import { mascot } from "./mascot";
+import { searchFeature } from "./search";
 
 /**
  * Les fonctionnalités d'OsaMaps. Chaque module ajoute SA ligne d'import et son entrée dans la
@@ -13,4 +14,5 @@ export const FEATURES: Feature[] = [
   friends,
   guidance,
   mascot,
+  searchFeature,
 ];
