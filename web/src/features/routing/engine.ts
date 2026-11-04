@@ -52,7 +52,11 @@ interface ValhallaManeuver {
   length: number;
   time: number;
   lanes?: { directions?: number | string[]; valid?: boolean; active?: boolean }[];
+  roundabout_exit_count?: number;
 }
+
+/** Maneuver du store + numéro de sortie de rond-point (lu par le guidage s'il est présent). */
+export type RoutingManeuver = Maneuver & { roundaboutExit?: number };
 interface ValhallaTrip {
   legs: { shape: string; maneuvers: ValhallaManeuver[]; summary: { length: number; time: number } }[];
   summary: { length: number; time: number; has_toll?: boolean; has_highway?: boolean; has_ferry?: boolean };
@@ -172,7 +176,7 @@ function convertTrip(trip: ValhallaTrip, id: string, stopNames: string[]): Compu
     leg.maneuvers.forEach((m, mi) => {
       const isLegEnd = mi === leg.maneuvers.length - 1;
       const street = (m.street_names ?? m.begin_street_names ?? [])[0];
-      const man: Maneuver = {
+      const man: RoutingManeuver = {
         instruction: m.instruction,
         verbal: m.verbal_pre_transition_instruction || m.instruction,
         type: m.type,
@@ -190,6 +194,7 @@ function convertTrip(trip: ValhallaTrip, id: string, stopNames: string[]): Compu
         man.verbal = `Vous êtes arrivé à votre étape, ${name}.`;
         stopShapeIndex.push(man.shapeIndex);
       }
+      if (typeof m.roundabout_exit_count === "number" && m.roundabout_exit_count > 0) man.roundaboutExit = m.roundabout_exit_count;
       if (!man.lanes) delete man.lanes;
       if (!man.street) delete man.street;
       maneuvers.push(man);
