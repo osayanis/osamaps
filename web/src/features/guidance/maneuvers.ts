@@ -11,7 +11,9 @@ export type ManeuverKind =
   | "ramp-right" | "ramp-left" | "exit-right" | "exit-left"
   | "keep-right" | "keep-left" | "merge" | "merge-right" | "merge-left"
   | "roundabout" | "roundabout-exit" | "ferry" | "ferry-exit"
-  | "arrive" | "arrive-right" | "arrive-left";
+  | "arrive" | "arrive-right" | "arrive-left"
+  /** Étape intermédiaire (module routing : type "waypoint", instruction « Étape atteinte : X »). */
+  | "waypoint";
 
 const BY_NUMBER: Record<number, ManeuverKind> = {
   1: "depart", 2: "depart", 3: "depart",
@@ -32,6 +34,7 @@ const KINDS = new Set<string>(Object.values(BY_NUMBER));
 export function kindOf(m: Maneuver): ManeuverKind {
   if (typeof m.type === "number") return BY_NUMBER[m.type] ?? "straight";
   const t = String(m.type).toLowerCase().replace(/[_ ]/g, "-");
+  if (t === "waypoint") return "waypoint";
   if (KINDS.has(t)) return t as ManeuverKind;
   // libellés souples (« turn-right », « roundabout »…)
   if (t.includes("roundabout") || t.includes("rotary")) return "roundabout";
@@ -66,6 +69,12 @@ export function roundaboutExitTarget(m: Maneuver): { via: "sur" | "vers"; name: 
   if (!match) return null;
   const name = match[2].replace(/\s*\([^)]*\)/g, "").trim();
   return name ? { via: match[1].toLowerCase() === "vers" ? "vers" : "sur", name } : null;
+}
+
+/** Nom d'une étape : « Étape atteinte : Vichy » → « Vichy ». */
+export function waypointName(m: Maneuver): string {
+  const after = /:\s*(.+)$/.exec(m.instruction ?? "")?.[1]?.replace(/\.$/, "").trim();
+  return after || mainStreet(m) || "";
 }
 
 /** Premier nom de rue (Valhalla donne parfois « Cours Jean Jaurès/D 528 »). */
@@ -136,6 +145,10 @@ export function action(m: Maneuver): string {
     case "arrive": return "vous arriverez à destination";
     case "arrive-right": return "vous arriverez à destination, sur la droite";
     case "arrive-left": return "vous arriverez à destination, sur la gauche";
+    case "waypoint": {
+      const name = waypointName(m);
+      return name ? `vous arriverez à l'étape, ${name}` : "vous arriverez à l'étape";
+    }
   }
 }
 
@@ -151,6 +164,7 @@ export function shortLabel(m: Maneuver): string {
     case "arrive": return "Destination";
     case "arrive-right": return "Destination à droite";
     case "arrive-left": return "Destination à gauche";
+    case "waypoint": return waypointName(m) || "Étape";
     default: {
       const a = action({ ...m, street: undefined });
       return a.charAt(0).toUpperCase() + a.slice(1);

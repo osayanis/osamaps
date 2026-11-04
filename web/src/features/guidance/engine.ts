@@ -5,7 +5,7 @@ import { on, emit, type BusEvents } from "../../core/bus";
 import { speak, setMuted } from "../../core/voice";
 import { cumulativeDistances, snapToLine, distance } from "../../core/geometry";
 import { guide, setGuide, initialGuide, useGuide, useGuidePrefs, type GuideAlert } from "./state";
-import { action, capitalize, kindOf, isArrive, mainStreet, spokenDistance, withArticle } from "./maneuvers";
+import { action, capitalize, kindOf, isArrive, mainStreet, spokenDistance, waypointName, withArticle } from "./maneuvers";
 
 /**
  * Le moteur du guidage : à chaque position, accroche au tracé, calcule la progression,
@@ -179,6 +179,10 @@ function onPosition(pos: Position) {
   if (!route || route.coords.length < 2) return;
   if (!ctx || ctx.route.id !== route.id) {
     loadRoute(route);
+  } else if (ctx.route !== route) {
+    // même itinéraire enrichi (ex. limites de vitesse arrivées après coup) : on garde la progression
+    ctx = route.coords.length === ctx.route.coords.length ? { ...ctx, route } : { route, cum: cumulativeDistances(route.coords), total: 0 };
+    if (!ctx.total) ctx.total = ctx.cum[ctx.cum.length - 1] ?? 0;
   }
   const c = ctx!;
   const g = guide();
@@ -264,6 +268,7 @@ function announce(route: Route, next: number, dist: number, stages: number[]) {
   if (isArrive(kind) && isNow) { announced.set(next, reached); return; }
 
   let text = isNow ? capitalize(action(m)) : `Dans ${spokenDistance(dist)}, ${action(m)}`;
+  if (isNow && kind === "waypoint") text = `Étape atteinte${waypointName(m) ? ` : ${waypointName(m)}` : ""}. On continue`;
   // « puis » : la manœuvre suivante arrive tout de suite après
   const after = ms[next + 1];
   if (after && reached >= stages.length - 2 && ctx) {
