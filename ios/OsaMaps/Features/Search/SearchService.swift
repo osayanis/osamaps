@@ -83,7 +83,14 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
         let r = MKLocalSearch.Request()
         r.naturalLanguageQuery = String(q.prefix(200))
         r.resultTypes = [.address, .pointOfInterest]
-        if let near { r.region = MKCoordinateRegion(center: near, latitudinalMeters: 80_000, longitudinalMeters: 80_000) }
+        if let near {
+            r.region = MKCoordinateRegion(center: near, latitudinalMeters: 80_000, longitudinalMeters: 80_000)
+            // « boulangerie » : un commerce du coin, pas ceux de la grande ville d'à côté
+            if SearchCategory.matching(q) != nil, #available(iOS 18.0, macOS 15.0, *) {
+                r.regionPriority = .required
+                r.region = MKCoordinateRegion(center: near, latitudinalMeters: 30_000, longitudinalMeters: 30_000)
+            }
+        }
         let items = try await Self.run(MKLocalSearch(request: r))
         let out = items.prefix(10).enumerated().map { SearchResult(mapItem: $1, rank: $0) }
         store(key, out)
@@ -177,16 +184,21 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
     /// Pertinence texte 55 %, source 20 %, proximité 25 % ; une commune au nom exact passe devant.
     static func rank(_ q: String, _ list: [SearchResult], near: CLLocationCoordinate2D?) -> [SearchResult] {
         let nq = SearchText.norm(q)
+        // « boulangerie », « pharmacie »… : on cherche un commerce, pas le lieu-dit du même nom à 200 km
+        let wantsPlace = SearchCategory.matching(q) != nil
         let scored = list.map { r -> SearchResult in
             var r = r
-            let tm = SearchText.match(q, name: r.name, detail: r.detail)
+            let tm = SearchText.match(q, name: r.name, detail: r.detail + " " + (r.typeLabel ?? ""))
             let prox = near.map { 1 / (1 + Geo.distance($0, r.coordinate) / 1000 / 15) } ?? 0
             let cityBonus = r.kind == "city" && SearchText.norm(r.name) == nq ? 0.25 : 0
             r.score = tm * 0.55 + r.rel * 0.2 + prox * 0.25 + cityBonus
+            // une adresse IGN qui ne ressemble pas à la requête (« Le Moulin » pour « gare moulins ») : bruit
+            if r.source == .ban && tm < 0.3 { r.score = -1 }
+            if r.source == .ban && wantsPlace { r.score *= 0.6 }
             return r
         }
         var out: [SearchResult] = []
-        for r in scored.sorted(by: { $0.score > $1.score }) {
+        for r in scored.filter({ $0.score >= 0 }).sorted(by: { $0.score > $1.score }) {
             if let i = out.firstIndex(where: { isDup($0, r) }) {
                 // on garde le libellé le plus riche (le commerce Apple plutôt que l'adresse brute)
                 if out[i].typeLabel == nil || (out[i].source == .ban && r.source == .apple && r.kind != "address" && r.kind != "street" && r.kind != "city") {
@@ -208,29 +220,28 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
     // MARK: autour de moi
 
     /// POI d'une catégorie autour d'un point (Apple). Cache sur une grille d'≈ 1 km.
+    /// Deux voies : la recherche par catégorie (MKLocalPointsOfInterestRequest) et la recherche texte filtrée ;
+    /// si la première ne répond pas (ou rien), on tente l'autre.
     func nearby(_ cat: SearchCategory, center: CLLocationCoordinate2D) async throws -> [SearchResult] {
         let key = String(format: "near|%@|%.2f,%.2f", cat.id, center.latitude, center.longitude)
         if let hit = cached(key) { return hit }
-        let radius = min(cat.maxKm, 30) * 1000
+        let ways: [() async throws -> [MKMapItem]] = cat.textFirst
+            ? [{ try await self.nearbyText(cat, center) }, { try await self.nearbyPOI(cat, center) }]
+            : [{ try await self.nearbyPOI(cat, center) }, { try await self.nearbyText(cat, center) }]
         var items: [MKMapItem] = []
         var failure: Error?
-        do {
-            let r = MKLocalPointsOfInterestRequest(center: center, radius: radius)
-            r.pointOfInterestFilter = MKPointOfInterestFilter(including: cat.poi)
-            items = try await Self.run(MKLocalSearch(request: r))
-        } catch {
-            failure = error
+        for way in ways {
+            do {
+                items = try await way()
+                if !items.isEmpty { break }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failure = failure ?? error
+            }
+            try Task.checkCancellation()
         }
-        try Task.checkCancellation()
-        // secours : recherche texte filtrée sur la catégorie (rayon plus large)
-        if items.isEmpty {
-            let r = MKLocalSearch.Request()
-            r.naturalLanguageQuery = cat.query
-            r.resultTypes = .pointOfInterest
-            r.pointOfInterestFilter = MKPointOfInterestFilter(including: cat.poi)
-            r.region = MKCoordinateRegion(center: center, latitudinalMeters: cat.maxKm * 2000, longitudinalMeters: cat.maxKm * 2000)
-            do { items = try await Self.run(MKLocalSearch(request: r)) } catch { if let failure { throw failure } else { throw error } }
-        }
+        if items.isEmpty, let failure { throw failure }
         var out: [SearchResult] = []
         let sorted = items
             .map { SearchResult(mapItem: $0, rank: 0, fallbackLabel: cat.single) }
@@ -242,6 +253,25 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
         out = Array(out.prefix(20))
         store(key, out)
         return out
+    }
+
+    private func nearbyPOI(_ cat: SearchCategory, _ center: CLLocationCoordinate2D) async throws -> [MKMapItem] {
+        let r = MKLocalPointsOfInterestRequest(center: center, radius: min(cat.maxKm, 30) * 1000)
+        r.pointOfInterestFilter = MKPointOfInterestFilter(including: cat.poi)
+        return try await Self.run(MKLocalSearch(request: r))
+    }
+
+    /// Recherche texte filtrée sur la catégorie. La région n'est qu'indicative pour Apple : on la garde petite
+    /// (sinon des résultats à 90 km remontent), et on filtre ensuite par distance.
+    private func nearbyText(_ cat: SearchCategory, _ center: CLLocationCoordinate2D) async throws -> [MKMapItem] {
+        let r = MKLocalSearch.Request()
+        r.naturalLanguageQuery = cat.query
+        r.resultTypes = .pointOfInterest
+        r.pointOfInterestFilter = MKPointOfInterestFilter(including: cat.poi)
+        let m = min(cat.maxKm, 12) * 2000
+        r.region = MKCoordinateRegion(center: center, latitudinalMeters: m, longitudinalMeters: m)
+        if #available(iOS 18.0, macOS 15.0, *) { r.regionPriority = .required }
+        return try await Self.run(MKLocalSearch(request: r))
     }
 }
 

@@ -259,6 +259,9 @@ final class SearchState {
         categoryTask?.cancel()
         focused = false
         category = SearchCategoryState(id: id, center: c)
+        // la zone « regardée » repart du centre de recherche (sinon le bouton « dans cette zone » clignote)
+        mapCenter = c
+        mapSpan = 0
         core.openPanel("search-results")
         Haptic.play("light")
         categoryTask = Task { [weak self] in

@@ -184,10 +184,12 @@ struct SearchCategory: Identifiable, Hashable {
     var maxKm: Double
     /// Mots qui font proposer la catégorie quand on les tape.
     var aliases: [String] = []
+    /// Recherche texte d'abord (la catégorie Apple seule est trop large ou ne répond pas).
+    var textFirst = false
 
     static let all: [SearchCategory] = [
         .init(id: "fuel", label: "Essence", single: "Station-service", symbol: "fuelpump.fill", poi: [.gasStation],
-              query: "station-service", maxKm: 25, aliases: ["essence", "carburant", "station", "gazole", "diesel"]),
+              query: "station-service", maxKm: 25, aliases: ["essence", "carburant", "station", "gazole", "diesel"], textFirst: true),
         .init(id: "charge", label: "Recharge", single: "Borne de recharge", symbol: "ev.charger.fill", poi: [.evCharger],
               query: "borne de recharge", maxKm: 50, aliases: ["recharge", "borne", "electrique"]),
         .init(id: "parking", label: "Parking", single: "Parking", symbol: "parkingsign.circle.fill", poi: [.parking],
@@ -199,7 +201,7 @@ struct SearchCategory: Identifiable, Hashable {
         .init(id: "pharmacy", label: "Pharmacie", single: "Pharmacie", symbol: "cross.case.fill", poi: [.pharmacy],
               query: "pharmacie", maxKm: 20, aliases: ["pharmacie"]),
         .init(id: "shop", label: "Supermarché", single: "Supermarché", symbol: "cart.fill", poi: [.foodMarket],
-              query: "supermarché", maxKm: 20, aliases: ["supermarche", "courses", "epicerie", "hypermarche"]),
+              query: "supermarché", maxKm: 20, aliases: ["supermarche", "courses", "epicerie", "hypermarche"], textFirst: true),
         .init(id: "cafe", label: "Cafés", single: "Café", symbol: "cup.and.saucer.fill", poi: [.cafe],
               query: "café", maxKm: 15, aliases: ["cafe", "bar"]),
         .init(id: "toilets", label: "Toilettes", single: "Toilettes", symbol: "toilet.fill", poi: [.restroom],
