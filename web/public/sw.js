@@ -86,11 +86,14 @@ self.addEventListener("message", (event) => {
 async function handleNavigate(event) {
   const cache = await caches.open(CACHE);
   const cached = await cache.match(SCOPE); // une seule page (SPA), quelle que soit la query (?sim=…)
+  // lu tout de suite : une fois `cached` rendu à la page, son corps n'est plus lisible
+  const beforeText = cached ? cached.clone().text() : Promise.resolve(null);
   const network = (async () => {
-    const r = await fetch(event.request, { cache: "no-cache" });
+    // (un Request de navigation ne peut pas être recopié avec des options : on refait la requête par URL)
+    const r = await fetch(event.request.url, { cache: "no-cache", credentials: "same-origin" });
     if (!r.ok || !(r.headers.get("content-type") || "").includes("text/html")) return r;
     const html = await r.clone().text();
-    const before = cached ? await cached.clone().text() : null;
+    const before = await beforeText;
     if (before !== html) {
       await cache.put(SCOPE, r.clone());
       await precacheIndex(cache, html);
@@ -99,7 +102,7 @@ async function handleNavigate(event) {
     }
     return r;
   })();
-  event.waitUntil(network.catch(() => {}));
+  event.waitUntil(network.catch((e) => console.warn("[osamaps sw] revalidation", e)));
   if (cached) return cached;
   try {
     return await network;
