@@ -28,6 +28,8 @@ export interface Maneuver {
   /** Secondes jusqu'à la manœuvre suivante. */
   time: number;
   street?: string;
+  /** Rond-point : numéro de la sortie à prendre (Valhalla roundabout_exit_count). */
+  roundaboutExit?: number;
   /** Voies (si connues). */
   lanes?: { directions: string[]; valid: boolean }[];
 }

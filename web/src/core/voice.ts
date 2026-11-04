@@ -1,7 +1,6 @@
-import { loadLocal, saveLocal } from "./identity";
+import { usePrefs } from "./prefs";
 
 /** Synthèse vocale en français, en file d'attente. `speak("Dans 300 mètres, tournez à droite")`. */
-let muted = loadLocal("muted", false);
 let voice: SpeechSynthesisVoice | null = null;
 
 function pickVoice() {
@@ -15,7 +14,7 @@ if ("speechSynthesis" in window) {
 }
 
 export function speak(text: string, opts: { priority?: boolean } = {}) {
-  if (muted || !("speechSynthesis" in window)) return;
+  if (!usePrefs.getState().voice || !("speechSynthesis" in window)) return;
   if (opts.priority) speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "fr-FR";
@@ -24,9 +23,11 @@ export function speak(text: string, opts: { priority?: boolean } = {}) {
   speechSynthesis.speak(u);
 }
 
-export function isMuted() { return muted; }
+/** Une seule source de vérité : la préférence `voice` (Réglages et bouton du guidage restent d'accord). */
+export function isMuted() { return !usePrefs.getState().voice; }
 export function setMuted(m: boolean) {
-  muted = m;
-  saveLocal("muted", m);
-  if (m && "speechSynthesis" in window) speechSynthesis.cancel();
+  usePrefs.getState().setPref("voice", !m);
 }
+usePrefs.subscribe((s, prev) => {
+  if (prev.voice && !s.voice && "speechSynthesis" in window) speechSynthesis.cancel();
+});

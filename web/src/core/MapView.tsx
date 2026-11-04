@@ -29,7 +29,11 @@ export function MapView() {
     const userMove = (e: { originalEvent?: unknown }) => { if (e.originalEvent) core().set({ follow: false }); };
     map.on("dragstart", userMove);
     map.on("rotatestart", userMove);
-    map.on("load", () => core().set({ map, mapReady: true }));
+    map.on("load", () => {
+      // l'attribution compacte s'ouvre seule au démarrage : on la replie (le « i » reste visible)
+      el.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
+      core().set({ map, mapReady: true });
+    });
     return () => { core().set({ map: null, mapReady: false }); map.remove(); };
   }, []);
 
@@ -46,7 +50,9 @@ export function MapView() {
       pitch: driving ? 55 : map.getPitch(),
       // en conduite, la position est placée plus bas que le centre (on voit la route devant)
       padding: driving ? { top: window.innerHeight * 0.35, bottom: 0, left: 0, right: 0 } : { top: 0, bottom: 0, left: 0, right: 0 },
-      duration: driving ? 900 : 600,
+      // durée = intervalle entre deux positions : la caméra arrive juste quand la suivante tombe
+      // (sinon chaque easeTo est interrompu et le retard s'accumule à grande vitesse)
+      duration: driving && prev.position ? Math.min(1000, Math.max(150, position.time - prev.position.time)) : 600,
       easing: (t) => t,
     });
   }), []);
