@@ -4,7 +4,7 @@ import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { Mascot } from "./Mascot";
 import { BadgeIcon, LockIcon } from "./BadgeIcon";
-import { ACCESSORIES, BADGES, levelOf, unlockText } from "./data";
+import { ACCESSORIES, BADGES, levelOf, nf, unlockText } from "./data";
 import { isUnlocked, poke, toggleAccessory, useMascot, wornAccessories } from "./engine";
 import { syncBoard, type Board } from "./leaderboard";
 import { kmh } from "./TripSummary";
@@ -69,7 +69,7 @@ export function Profile() {
             <i style={{ transform: `scaleX(${lvl.progress})` }} />
           </div>
           <p className="mascot-dim mascot-small">
-            {lvl.next ? `${s.points} pts · encore ${lvl.next - s.points} pour le niveau ${lvl.level + 1}` : `${s.points} pts · niveau maximum`}
+            {lvl.next ? `${nf(s.points)} pts · encore ${nf(lvl.next - s.points)} pour le niveau ${lvl.level + 1}` : `${nf(s.points)} pts · niveau maximum`}
           </p>
         </div>
         <button className="btn-ghost mascot-close" onClick={() => openPanel(null)} aria-label="Fermer">
@@ -80,7 +80,7 @@ export function Profile() {
       <div className="mascot-stats mascot-stats-3">
         <Stat label="km au total" value={(s.totalDistance / 1000).toLocaleString("fr-FR", { maximumFractionDigits: s.totalDistance < 10000 ? 1 : 0 })} />
         <Stat label={s.trips > 1 ? "trajets" : "trajet"} value={String(s.trips)} />
-        <Stat label="cette semaine" value={`${s.week.key ? s.week.points : 0} pts`} />
+        <Stat label="cette semaine" value={`${nf(s.week.key ? s.week.points : 0)} pts`} />
       </div>
 
       <div className="mascot-tabs" role="tablist">
@@ -152,7 +152,7 @@ export function Profile() {
                 <li key={i} className={r.me ? "is-me" : ""}>
                   <span className="mascot-rank">{i + 1}</span>
                   <span className="mascot-board-name">{r.name}{r.me ? " (toi)" : ""}</span>
-                  <span>{r.points} pts</span>
+                  <span>{nf(r.points)} pts</span>
                 </li>
               ))}
             </ol>

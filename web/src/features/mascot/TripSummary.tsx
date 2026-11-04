@@ -3,7 +3,7 @@ import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { Mascot } from "./Mascot";
 import { BadgeIcon } from "./BadgeIcon";
-import { badgeById, levelOf } from "./data";
+import { badgeById, levelOf, nf } from "./data";
 import { useMascot, wornAccessories, type Trip } from "./engine";
 
 export const kmh = (v: number) => `${Math.round(v)} km/h`;
@@ -66,7 +66,7 @@ export function TripSummary() {
       <div className="mascot-level-line">
         <span>Niv. {lvl.level}</span>
         <div className="mascot-bar" aria-hidden="true"><i style={{ transform: `scaleX(${lvl.progress})` }} /></div>
-        <span className="mascot-dim">{lvl.next ? `${points} / ${lvl.next}` : `${points} pts`}</span>
+        <span className="mascot-dim">{lvl.next ? `${nf(points)} / ${nf(lvl.next)}` : `${nf(points)} pts`}</span>
       </div>
 
       <div className="mascot-actions">

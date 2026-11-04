@@ -58,6 +58,9 @@ export function unlockText(a: AccessoryDef) {
   return `Niveau ${a.level}`;
 }
 
+/** « 12 500 » */
+export const nf = (n: number) => Math.round(n).toLocaleString("fr-FR");
+
 /** Points gagnés. */
 export const POINTS = {
   perKm: 1,
