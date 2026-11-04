@@ -21,7 +21,7 @@ export function levelOf(points: number) {
   return { level: i + 1, name: cur.name, min: cur.min, next: next?.min ?? null, progress: Math.max(0, Math.min(1, progress)) };
 }
 
-export type BadgeIcon = "flag" | "gauge" | "globe" | "moon" | "sunrise" | "megaphone" | "check" | "compass" | "calendar" | "road" | "wheel";
+export type BadgeIcon = "flag" | "gauge" | "globe" | "moon" | "sunrise" | "megaphone" | "check" | "vote" | "compass" | "calendar" | "road" | "wheel";
 
 export interface BadgeDef { id: string; name: string; hint: string; icon: BadgeIcon }
 
@@ -35,6 +35,7 @@ export const BADGES: BadgeDef[] = [
   { id: "matinal", name: "Lève-tôt", hint: "Partir entre 5 h et 7 h", icon: "sunrise" },
   { id: "signaleur", name: "Vigie", hint: "Faire 10 signalements", icon: "megaphone" },
   { id: "confirme", name: "Œil de lynx", hint: "10 signalements confirmés", icon: "check" },
+  { id: "entraide", name: "Entraide", hint: "Voter sur 10 signalements", icon: "vote" },
   { id: "explorateur", name: "Explorateur", hint: "Aller vers 10 destinations différentes", icon: "compass" },
   { id: "fidele", name: "Fidèle", hint: "Rouler 7 jours différents", icon: "calendar" },
 ];

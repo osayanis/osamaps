@@ -49,6 +49,7 @@ interface Saved {
   history: Trip[];
   reports: number;
   confirmed: number;
+  votes: number;
   destinations: string[];
   days: string[];
   week: { key: string; points: number };
@@ -57,7 +58,7 @@ interface Saved {
 }
 
 const DEFAULT: Saved = {
-  points: 0, totalDistance: 0, trips: 0, badges: {}, equipped: [], history: [], reports: 0, confirmed: 0,
+  points: 0, totalDistance: 0, trips: 0, badges: {}, equipped: [], history: [], reports: 0, confirmed: 0, votes: 0,
   destinations: [], days: [], week: { key: "", points: 0 },
   settings: { animations: true, talk: true, leaderboard: false }, lastTalk: 0,
 };
@@ -109,7 +110,7 @@ function persist() {
   const s = st();
   const out: Saved = {
     points: s.points, totalDistance: s.totalDistance, trips: s.trips, badges: s.badges, equipped: s.equipped,
-    history: s.history, reports: s.reports, confirmed: s.confirmed, destinations: s.destinations, days: s.days,
+    history: s.history, reports: s.reports, confirmed: s.confirmed, votes: s.votes, destinations: s.destinations, days: s.days,
     week: s.week, settings: s.settings, lastTalk: s.lastTalk,
   };
   saveLocal("mascot.state", out);
@@ -175,6 +176,7 @@ function checkBadges(ctx: { trip?: Trip } = {}): string[] {
   grant("1000-km", km >= 1000);
   grant("signaleur", s.reports >= 10);
   grant("confirme", s.confirmed >= 10);
+  grant("entraide", s.votes >= 10);
   grant("explorateur", s.destinations.length >= 10);
   grant("fidele", s.days.length >= 7);
   if (t) {
@@ -379,7 +381,10 @@ export function initMascot() {
   offs.push(on("points:earn", ({ amount, reason }) => {
     const n = Math.max(0, Math.min(POINTS.maxEvent, Math.round(Number(amount) || 0)));
     const r = String(reason ?? "");
+    // reasons du module reports : « Ton signalement est confirmé » (contient aussi « signal » : confirm d'abord),
+    // « Signalement : Police »…, « Vote : toujours là / plus là » (voter sur le signalement d'un autre)
     if (/confirm/i.test(r)) patch({ confirmed: st().confirmed + 1 });
+    else if (/^vote/i.test(r)) patch({ votes: st().votes + 1 });
     else if (/signal|report/i.test(r)) patch({ reports: st().reports + 1 });
     addPoints(n);
     if (!driving()) checkBadges();
