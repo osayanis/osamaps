@@ -37,7 +37,7 @@ export function App() {
 }
 
 function render(slot: Parameters<typeof slotEntries>[0]) {
-  return slotEntries(slot).map(({ featureId, Component }) => <Component key={featureId} />);
+  return slotEntries(slot).map(({ featureId, Component }, i) => <Component key={`${featureId}-${i}`} />);
 }
 
 function Settings() {

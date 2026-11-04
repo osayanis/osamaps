@@ -54,7 +54,7 @@ export function MapView() {
   return (
     <div className="map-root">
       <div ref={el} className="map-canvas" />
-      {mapReady && slotEntries("map").map(({ featureId, Component }) => <Component key={featureId} />)}
+      {mapReady && slotEntries("map").map(({ featureId, Component }, i) => <Component key={`${featureId}-${i}`} />)}
     </div>
   );
 }
