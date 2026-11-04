@@ -52,7 +52,7 @@ final class TrafficDriveController {
         withObservationTracking {
             let c = Core.shared
             _ = c.routes; _ = c.activeRoute; _ = c.mode
-        } onChange: {
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.coreChanged()
                 self?.observeCore()

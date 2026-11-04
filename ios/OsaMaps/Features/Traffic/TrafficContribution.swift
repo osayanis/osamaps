@@ -78,7 +78,7 @@ final class TrafficContribution {
     private func observePref() {
         withObservationTracking {
             _ = Prefs.shared.contributeTraffic
-        } onChange: {
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 if !Prefs.shared.contributeTraffic { self?.end() }
                 self?.observePref()

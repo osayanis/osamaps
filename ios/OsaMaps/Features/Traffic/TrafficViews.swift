@@ -72,7 +72,7 @@ struct TrafficDelayHUD: View {
 // MARK: - Fiche : évènement officiel ou tronçon touché
 
 struct TrafficSheet: View {
-    @Environment(Core.self) private var core
+    private var core: Core { Core.shared }
 
     var body: some View {
         let _ = core.panelVersion
@@ -189,7 +189,7 @@ struct TrafficSwitchStyle: ToggleStyle {
 }
 
 struct TrafficSettingsSection: View {
-    @Environment(Prefs.self) private var prefs
+    @State private var prefs = Prefs.shared
     @State private var store = TrafficStore.shared
     @State private var detailsOpen = false
 

@@ -69,7 +69,7 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
     private func observeVisible() {
         withObservationTracking {
             _ = TrafficStore.shared.visible
-        } onChange: {
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if TrafficStore.shared.visible != self.visibleObserved {
