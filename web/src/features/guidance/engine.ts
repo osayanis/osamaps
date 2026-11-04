@@ -334,18 +334,26 @@ function updateSpeed(route: Route, kmh: number) {
 
 /* ---------- alertes ---------- */
 
+/**
+ * Les émetteurs écrivent souvent la distance dans le texte (« Police signalée dans 1,2 km ») :
+ * on la retire, puisque le HUD affiche une distance qui décompte et que la voix la dit déjà.
+ */
+export function stripDistance(text: string): string {
+  return text.replace(/\s*(?:à|dans)\s+\d+(?:[,.]\d+)?\s*(?:km|m|mètres?|kilomètres?)\b\.?\s*$/i, "").trim();
+}
+
 function onAlert(a: BusEvents["drive:alert"]) {
   if (core().mode !== "drive" || !a?.id) return;
   const tone = a.tone ?? "info";
   const distanceM = Math.max(0, Number(a.distance) || 0);
-  const item: GuideAlert = { id: a.id, kind: a.kind || "danger", text: a.text || "Attention", tone, baseDistance: distanceM, baseOdo: odometer, remaining: distanceM, receivedAt: Date.now() };
+  const item: GuideAlert = { id: a.id, kind: a.kind || "danger", text: stripDistance(a.text || "") || "Attention", tone, baseDistance: distanceM, baseOdo: odometer, remaining: distanceM, receivedAt: Date.now() };
   const alerts = guide().alerts.filter((x) => x.id !== a.id);
   alerts.push(item);
   alerts.sort((x, y) => x.remaining - y.remaining);
   setGuide({ alerts });
   if (!spokenAlerts.has(a.id)) {
     spokenAlerts.add(a.id);
-    const t = a.text.replace(/\.$/, "");
+    const t = item.text.replace(/\.$/, "");
     say(distanceM >= 60 ? `Attention, ${t.charAt(0).toLowerCase() + t.slice(1)}, dans ${spokenDistance(distanceM)}.` : `Attention, ${t.charAt(0).toLowerCase() + t.slice(1)}.`);
   }
 }
