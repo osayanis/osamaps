@@ -217,7 +217,7 @@ enum FriendsFollowLayer {
             var pts = line + [t.dest]
             if let p = t.pos { pts.append(p) }
             if pts.count == 1 { let c = pts[0]; pts = [.init(latitude: c.latitude - 0.004, longitude: c.longitude - 0.004), .init(latitude: c.latitude + 0.004, longitude: c.longitude + 0.004)] }
-            fittingUntil = Date().addingTimeInterval(1.5)
+            fittingUntil = Date().addingTimeInterval(2.5)
             MapHub.fit(pts, animated: true, extraTop: 20)
         }
     }

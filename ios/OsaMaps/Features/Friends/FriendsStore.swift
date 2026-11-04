@@ -179,9 +179,10 @@ final class FriendsStore {
         status = .ready
         lastSent = .distantPast
         sendLocation(force: true)
+        // invitation arrivée avant la connexion : on la remontre si un autre panneau l'a remplacée entre-temps
         if let code = pendingInvite {
             pendingInvite = nil
-            Core.shared.openPanel("friends-invite", data: code)
+            if Core.shared.panel != "friends-invite" { Core.shared.openPanel("friends-invite", data: code) }
         }
     }
 
@@ -421,8 +422,8 @@ final class FriendsStore {
                 return
             }
             #endif
-            if status == .ready || me != nil { Core.shared.openPanel("friends-invite", data: code) }
-            else { pendingInvite = code; Core.shared.openPanel("friends-invite", data: code) }
+            if status != .ready { pendingInvite = code }
+            Core.shared.openPanel("friends-invite", data: code)
         case "suivre":
             let token = (isApp ? (path.first ?? q["token"] ?? "") : (q["suivre"] ?? "")).lowercased()
             guard token.count == 36, token.allSatisfy({ $0 == "-" || $0.isHexDigit }) else { return }

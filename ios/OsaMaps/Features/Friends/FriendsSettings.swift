@@ -2,13 +2,12 @@ import SwiftUI
 
 /// Section « Amis et partage » de l'écran Réglages.
 struct FriendsSettings: View {
-    @Environment(Prefs.self) private var prefs
+    @Bindable private var prefs = Prefs.shared
     @State private var store = FriendsStore.shared
     @State private var confirm = false
     @State private var deleting = false
 
     var body: some View {
-        @Bindable var prefs = prefs
         VStack(alignment: .leading, spacing: 14) {
             Text("Amis et partage").font(.osa(17, .bold)).foregroundStyle(Osa.text)
 

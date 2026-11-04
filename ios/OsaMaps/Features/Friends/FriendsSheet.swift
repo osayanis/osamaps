@@ -57,10 +57,9 @@ struct FriendsPanelCard<Content: View>: View {
 struct FriendsList: View {
     @State private var store = FriendsStore.shared
     @Environment(Core.self) private var core
-    @Environment(Prefs.self) private var prefs
+    @Bindable private var prefs = Prefs.shared
 
     var body: some View {
-        @Bindable var prefs = prefs
         FriendsHead(title: "Amis")
 
         if store.status == .error {
