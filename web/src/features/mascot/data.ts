@@ -54,7 +54,7 @@ export const ACCESSORIES: AccessoryDef[] = [
 ];
 
 export function unlockText(a: AccessoryDef) {
-  if (a.badge) return `Badge « ${badgeById(a.badge)?.name ?? a.badge} »`;
+  if (a.badge) return badgeById(a.badge)?.name ?? a.badge;
   return `Niveau ${a.level}`;
 }
 

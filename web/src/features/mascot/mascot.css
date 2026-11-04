@@ -22,9 +22,9 @@
 }
 
 /* ───────── sur la carte ───────── */
-.mascot-pin { cursor: pointer; z-index: 3; -webkit-tap-highlight-color: transparent; }
+.mascot-pin { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .mascot-pin-inner { position: relative; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35)); }
-.mascot-ground { width: 200px; height: 200px; pointer-events: none; z-index: 2; }
+.mascot-ground { width: 200px; height: 200px; pointer-events: none; }
 .mascot-halo {
   position: absolute; inset: 0; border-radius: 50%;
   background: rgba(255, 255, 255, 0.07); border: 1.5px solid rgba(255, 255, 255, 0.18);
@@ -52,6 +52,8 @@
 
 /* ───────── panneaux du bas ───────── */
 .mascot-sheet {
+  /* au-dessus des contrôles MapLibre (attribution en z-index 2) */
+  position: relative; z-index: 3;
   border-radius: var(--radius-l) var(--radius-l) 0 0; border-bottom: 0;
   padding: 8px 18px calc(18px + var(--safe-bottom));
   display: flex; flex-direction: column; gap: 14px;
@@ -107,6 +109,7 @@
 .mascot-prof-hero { flex: none; border: 0; background: none; padding: 0; margin: -6px -6px -8px -10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .mascot-prof-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .mascot-prof-title h2 { font-size: 20px; }
+.mascot-prof-title .mascot-bar { flex: none; }
 .mascot-close { position: absolute; top: -4px; right: -8px; width: 44px; height: 44px; display: grid; place-items: center; }
 .mascot-stats-3 .mascot-stat-value { font-size: 17px; }
 

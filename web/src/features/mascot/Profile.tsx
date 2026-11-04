@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
 import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
@@ -13,7 +14,7 @@ export function ProfileButton() {
   const mode = useCore((s) => s.mode);
   const panel = useCore((s) => s.panel);
   const openPanel = useCore((s) => s.openPanel);
-  const worn = useMascot(wornAccessories);
+  const worn = useMascot(useShallow(wornAccessories));
   const sleeping = useMascot((s) => s.live.sleeping);
   if (mode === "drive") return null;
   const open = panel === "profile";

@@ -3,6 +3,7 @@ import { core, useCore, type Position } from "../../core/store";
 import { emit, on } from "../../core/bus";
 import { distance } from "../../core/geometry";
 import { loadLocal, saveLocal } from "../../core/identity";
+import { simulated } from "../../core/geo";
 import { ACCESSORIES, BADGES, POINTS, badgeById, levelOf } from "./data";
 import type { Accessory, Arms, Mood } from "./Mascot";
 
@@ -88,6 +89,7 @@ interface Tracker {
   destination?: string;
   destKey?: string;
   pauseTold: boolean;
+  startLevel: number;
 }
 
 function loadSaved(): Saved {
@@ -259,6 +261,7 @@ function startTrip() {
       start: Date.now(), distance: 0, moving: 0, maxSpeed: 0, stops: 0, stoppedSince: null, countedStop: false,
       last: null, earned: 0, destination: dest?.name,
       destKey: dest ? `${dest.coord[0].toFixed(2)},${dest.coord[1].toFixed(2)}` : undefined, pauseTold: false,
+      startLevel: levelOf(st().points).level,
     },
   });
   // seulement avant de rouler, une fois de temps en temps
@@ -276,14 +279,15 @@ function trackPosition(p: Position) {
     const dt = (now - t.last.time) / 1000;
     const d = distance(t.last.coord, p.coord);
     if (dt > 0) {
-      const computed = d / dt;
+      const computed = d / dt / SPEEDUP;
+      // vrais sauts GPS ignorés : téléportation (> 2 km d'un coup) ou vitesse absurde avec un fix imprécis
+      const imprecise = p.accuracy == null || p.accuracy > 30;
+      if (d > 2000 || (computed > 70 && d > 50 && imprecise)) { next.last = { coord: p.coord, time: now }; useMascot.setState({ trip: next }); return; }
       let speed = p.speed ?? computed;
-      // sauts GPS absurdes (> 250 km/h) ignorés
-      if (computed > 70 && d > 50) { next.last = { coord: p.coord, time: now }; useMascot.setState({ trip: next }); return; }
-      if (speed > 70) speed = computed;
+      if (speed > 70) speed = Math.min(computed, 70);
       next.distance += d;
       if (speed > 1.2) {
-        next.moving += dt;
+        next.moving += dt * SPEEDUP;
         next.stoppedSince = null;
         next.countedStop = false;
       } else if (next.distance > 100) {
@@ -304,12 +308,15 @@ function trackPosition(p: Position) {
 
 let arrivedName: string | null = null;
 
+/** Simulateur accéléré (?sim=90&speedup=4) : on remet les durées à l'échelle pour des stats cohérentes. */
+const SPEEDUP = simulated ? Math.max(1, Number(new URLSearchParams(location.search).get("speedup")) || 1) : 1;
+
 function endTrip(arrived: boolean): Trip | null {
   const t = st().trip;
   useMascot.setState({ trip: null });
   if (!t) return null;
-  const end = Date.now();
-  const duration = Math.max(1, (end - t.start) / 1000);
+  const end = Math.max(Date.now(), t.last?.time ?? 0);
+  const duration = Math.max(1, ((end - t.start) / 1000) * SPEEDUP);
   if (!arrived && t.distance < 300) return null;           // fausse alerte : on n'enregistre rien
 
   const s = st();
@@ -325,11 +332,12 @@ function endTrip(arrived: boolean): Trip | null {
     avgKmh: (t.distance / duration) * 3.6, maxKmh: t.maxSpeed * 3.6, stops: t.stops, points: 0, arrived,
     destination: arrivedName ?? t.destination, badges: [],
   };
-  const lvl0 = levelOf(st().points).level;
   trip.badges = checkBadges({ trip });
   const lvl1 = levelOf(st().points);
-  if (lvl1.level > lvl0) levelUp = { level: lvl1.level, name: lvl1.name };
+  // niveau gagné pendant le trajet (signalements, km, badges) : affiché dans le résumé
+  if (lvl1.level > t.startLevel) levelUp = { level: lvl1.level, name: lvl1.name };
   if (levelUp) trip.levelUp = levelUp;
+  if (levelUp && arrived) pendingLevelToast = null;      // le résumé le dit déjà
   // points du trajet = km + arrivée + badges + ce que les autres modules ont donné pendant le trajet
   trip.points = before + (st().points - s.points);
   patch({ history: [trip, ...st().history].slice(0, 20) });
@@ -397,7 +405,7 @@ export function initMascot() {
 
   // accès de test headless : window.osamaps.mascot
   const w = window as unknown as { osamaps?: Record<string, unknown> };
-  if (w.osamaps) w.osamaps.mascot = { state: st, sleep: () => setLive({ sleeping: true, mood: "sleepy" }), poke, demoTrip, addPoints };
+  if (w.osamaps) w.osamaps.mascot = { state: st, sleep: () => setLive({ sleeping: true, mood: "sleepy" }), poke, demoTrip, addPoints, toggleAccessory };
   return () => offs.forEach((f) => f());
 }
 
@@ -424,7 +432,7 @@ function demoTrip(km = 12.4, minutes = 17, destination = "Vichy") {
   useMascot.setState({
     trip: {
       start, distance: km * 1000, moving: minutes * 52, maxSpeed: 24.7, stops: 2, stoppedSince: null, countedStop: false,
-      last: null, earned: 0, destination, destKey: `demo-${destination}`, pauseTold: true,
+      last: null, earned: 0, destination, destKey: `demo-${destination}`, pauseTold: true, startLevel: levelOf(st().points).level,
     },
   });
   arrivedName = destination;

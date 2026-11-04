@@ -83,8 +83,8 @@ export function Mascot({
     return -side * deg;
   };
 
-  const viewBox = crop === "head" ? "-58 -64 116 116" : "-80 -66 160 128";
-  const ratio = crop === "head" ? 1 : 128 / 160;
+  const viewBox = crop === "head" ? "-62 -70 124 124" : "-80 -72 160 134";
+  const ratio = crop === "head" ? 1 : 134 / 160;
   const w = crop === "head" ? size : size * 1.6;
   const fx = Math.max(-1, Math.min(1, look.x)) * 5;
   const fy = Math.max(-1, Math.min(1, look.y)) * 3.5;
@@ -224,10 +224,10 @@ function Glasses() {
 function Cap() {
   return (
     <g>
-      <path d="M-41 -30 C-41 -58 41 -58 41 -30 Z" fill={INK} />
+      <path d="M-43 -28 C-43 -66 43 -66 43 -28 Z" fill={INK} />
       <path d="M-46 -31 Q4 -40 56 -30 Q58 -25 52 -24 Q4 -31 -44 -25 Q-50 -27 -46 -31 Z" fill="#2a2d38" />
-      <path d="M-36 -36 Q0 -52 36 -36" fill="none" stroke="#fff" strokeOpacity="0.14" strokeWidth="2" />
-      <circle cx="0" cy="-50" r="3.2" fill="#fff" fillOpacity="0.85" />
+      <path d="M0 -56 L0 -30" fill="none" stroke="#fff" strokeOpacity="0.14" strokeWidth="2" />
+      <circle cx="0" cy="-56" r="3.4" fill="#fff" fillOpacity="0.85" />
     </g>
   );
 }

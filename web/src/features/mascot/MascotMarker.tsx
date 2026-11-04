@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
@@ -21,7 +22,7 @@ export function MascotMarker() {
   const hasPos = useCore((s) => s.position != null);
   const mode = useCore((s) => s.mode);
   const live = useMascot((s) => s.live);
-  const worn = useMascot(wornAccessories);
+  const worn = useMascot(useShallow(wornAccessories));
   const animations = useMascot((s) => s.settings.animations);
   const [look, setLook] = useState({ x: 0, y: 0 });
 

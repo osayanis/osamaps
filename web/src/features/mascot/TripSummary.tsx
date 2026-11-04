@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { Mascot } from "./Mascot";
@@ -12,7 +13,7 @@ export function TripSummary() {
   const panel = useCore((s) => s.panel);
   const data = useCore((s) => s.panelData) as Trip | null;
   const openPanel = useCore((s) => s.openPanel);
-  const worn = useMascot(wornAccessories);
+  const worn = useMascot(useShallow(wornAccessories));
   const points = useMascot((s) => s.points);
   if (panel !== "trip-summary" || !data) return null;
   const t = data;
