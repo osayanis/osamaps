@@ -11,6 +11,14 @@ import { slotEntries } from "./registry";
  * carte chargée ; ils récupèrent l'instance avec `useCore((s) => s.map)`.
  * Le suivi de position (follow) est géré ici : en conduite, la carte suit et s'oriente.
  */
+/** Sur grand écran, le panneau devient une colonne à gauche (classe posée par le module shell) :
+ *  on décale le centre de la carte pour que la position ne soit pas cachée dessous. */
+function sidePanel() {
+  if (!document.documentElement.classList.contains("osa-side")) return 0;
+  const col = document.querySelector<HTMLElement>(".slot-sheet");
+  return col && col.offsetHeight > 0 ? col.offsetWidth + 12 : 0;
+}
+
 export function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const mapReady = useCore((s) => s.mapReady);
@@ -49,7 +57,7 @@ export function MapView() {
       bearing: driving && position.heading != null ? position.heading : map.getBearing(),
       pitch: driving ? 55 : map.getPitch(),
       // en conduite, la position est placée plus bas que le centre (on voit la route devant)
-      padding: driving ? { top: window.innerHeight * 0.35, bottom: 0, left: 0, right: 0 } : { top: 0, bottom: 0, left: 0, right: 0 },
+      padding: { top: driving ? window.innerHeight * 0.35 : 0, bottom: 0, right: 0, left: sidePanel() },
       // durée = intervalle entre deux positions : la caméra arrive juste quand la suivante tombe
       // (sinon chaque easeTo est interrompu et le retard s'accumule à grande vitesse)
       duration: driving && prev.position ? Math.min(1000, Math.max(150, position.time - prev.position.time)) : 600,

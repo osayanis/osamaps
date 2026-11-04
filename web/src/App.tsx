@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { MapView } from "./core/MapView";
 import { slotEntries, allFeatures } from "./core/registry";
 import { useCore } from "./core/store";
-import { startGeo } from "./core/geo";
+import { startGeo, simulated } from "./core/geo";
+import { usePrefs } from "./core/prefs";
 
 /**
  * Le shell : la carte, puis des emplacements fixes où les fonctionnalités se montent.
@@ -17,8 +18,15 @@ export function App() {
   const mode = useCore((s) => s.mode);
   const settingsOpen = useCore((s) => s.settingsOpen);
 
+  const onboarded = usePrefs((s) => s.onboarded);
+  const following = new URLSearchParams(location.search).has("suivre");
+
+  // la position n'est demandée qu'après l'écran d'accueil qui l'explique (ou en simulation)
   useEffect(() => {
-    startGeo();
+    if ((onboarded && !following) || simulated) startGeo();
+  }, [onboarded, following]);
+
+  useEffect(() => {
     const cleanups = allFeatures().map((f) => f.init?.()).filter(Boolean) as (() => void)[];
     return () => cleanups.forEach((c) => c());
   }, []);

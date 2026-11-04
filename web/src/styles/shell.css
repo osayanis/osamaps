@@ -42,3 +42,7 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+/* Aperçu d'itinéraire : le panneau est haut, les boutons du rail n'y servent pas (comme Waze) */
+.app.mode-preview .slot-rail { opacity: 0; pointer-events: none; transition: opacity 160ms var(--ease-out); }
+.app.mode-preview .slot-rail > * { pointer-events: none; }

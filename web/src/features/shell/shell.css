@@ -216,7 +216,7 @@ label.shell-ob-perm { cursor: pointer; }
    `bottom` plutôt que transform : un transform ferait du rail le repère des éléments
    position:fixed que d'autres modules pourraient y mettre (menus, bulles). */
 html.osa-stack .slot-rail {
-  bottom: calc(12px + var(--safe-bottom) + min(max(var(--shell-sheet-h, 168px), 28px), 50vh));
+  bottom: calc(12px + var(--safe-bottom) + min(max(var(--shell-sheet-h, 168px), 28px), calc(100dvh - 330px)));
   transition: bottom 280ms var(--ease-drawer);
 }
 

@@ -15,7 +15,7 @@ export interface BusEvents {
   /** Un lieu est choisi comme destination (déclenche le calcul d'itinéraire). */
   "place:go": { name: string; lng: number; lat: number };
   /** Un toast à afficher (le module design l'affiche). */
-  toast: { text: string; icon?: string; tone?: "info" | "good" | "warn" };
+  toast: { text: string; icon?: string; tone?: "info" | "good" | "warn"; id?: string; duration?: number };
   /** Le conducteur est sorti de l'itinéraire : le module routing recalcule depuis `from`. */
   "route:recompute": { from: [number, number] };
   /** Demande de recentrage / suivi (bouton, raccourci). */

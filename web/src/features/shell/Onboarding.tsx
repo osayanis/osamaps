@@ -18,7 +18,8 @@ const COUNT = 4;
 
 export function Onboarding() {
   const onboarded = usePrefs((s) => s.onboarded);
-  if (onboarded) return null;
+  // la vue « suis mon trajet » (lien ?suivre= du module friends) s'ouvre sans accueil
+  if (onboarded || new URLSearchParams(location.search).has("suivre")) return null;
   return <OnboardingFlow />;
 }
 
