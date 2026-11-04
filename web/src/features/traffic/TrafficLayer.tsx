@@ -13,7 +13,7 @@ const L_LINES = "traffic-lines";
 const L_EVENTS = "traffic-events-icons";
 const MIN_ZOOM = 7;
 const MAX_SPAN = 3.8; // degrés (le serveur refuse au-delà de 4)
-const ATTRIBUTION = "Trafic : contributeurs OsaMaps, Bison Futé / DIR (Licence Ouverte)";
+const ATTRIBUTION = "Trafic : OsaMaps, Bison Futé";
 
 const cssVar = (name: string, fallback: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -157,6 +157,10 @@ function createController(map: MLMap) {
   };
 
   const onStyle = () => { install(); render(); };
+  // setStyle(url) en mode diff (par défaut) remplace le style SANS « style.load » et retire nos
+  // calques : on revérifie après chaque styledata et à chaque idle (simple test d'existence).
+  const check = () => { if (map.isStyleLoaded() && !map.getSource(SRC)) onStyle(); };
+  const onStyleData = () => { window.setTimeout(check, 0); };
 
   function setVisible(v: boolean) {
     visible = v;
@@ -166,6 +170,8 @@ function createController(map: MLMap) {
 
   install();
   map.on("style.load", onStyle);
+  map.on("styledata", onStyleData);
+  map.on("idle", check);
   map.on("moveend", onMoveEnd);
   map.on("click", onClick);
   const socket = getSocket();
@@ -179,6 +185,8 @@ function createController(map: MLMap) {
       window.clearTimeout(debounce);
       cancelAnimationFrame(raf);
       map.off("style.load", onStyle);
+      map.off("styledata", onStyleData);
+      map.off("idle", check);
       map.off("moveend", onMoveEnd);
       map.off("click", onClick);
       socket.off("traffic:update", onUpdate);

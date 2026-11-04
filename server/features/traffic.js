@@ -94,20 +94,20 @@ const isLngLat = (p) => Array.isArray(p) && p.length === 2 && Number.isFinite(p[
 
 // ───────────────────────────── classement ─────────────────────────────
 /**
- * Niveau d'une vitesse v (km/h) par rapport à la vitesse fluide habituelle f (km/h, null si
- * inconnue). Sans historique, on reste prudent : seuils absolus (une rue à 30 n'est pas un bouchon).
+ * Niveau d'une vitesse v (km/h). Deux règles, on garde la plus sévère :
+ *  - absolue (toujours) : < 8 km/h bouchon, < 18 km/h ralenti — une route qu'on n'a jamais vue
+ *    que bouchée ne doit pas « apprendre » que 6 km/h est normal ;
+ *  - relative à la vitesse fluide habituelle f (si connue) : < 30 % bouchon, < 60 % ralenti —
+ *    50 km/h sur une autoroute, c'est ralenti. Sans historique on reste sur l'absolu (une rue à
+ *    30 n'est pas un bouchon).
  */
+const RANK = { ok: 0, slow: 1, jam: 2 };
 function classify(v, f) {
-  if (v >= 70) return "ok";
-  if (f && f > 0) {
-    const r = v / f;
-    if (r < 0.3 || (v < 10 && f >= 25)) return "jam";
-    if (r < 0.6) return "slow";
-    return "ok";
-  }
-  if (v < 8) return "jam";
-  if (v < 18) return "slow";
-  return "ok";
+  const abs = v < 8 ? "jam" : v < 18 ? "slow" : "ok";
+  if (v >= 70 || !f || f <= 0) return abs;
+  const r = v / f;
+  const rel = r < 0.3 ? "jam" : r < 0.6 ? "slow" : "ok";
+  return RANK[rel] > RANK[abs] ? rel : abs;
 }
 /**
  * Retard (s) sur une portion de `len` mètres couverte par des morceaux { len, v, ref } qui peuvent
@@ -116,14 +116,14 @@ function classify(v, f) {
 function runDelay(len, parts) {
   let w = 0, inv = 0, invRef = 0;
   for (const p of parts) {
-    const v = Math.max(p.v, 3), ref = Math.max(p.ref || 45, v);
+    const v = Math.max(p.v, 3), ref = Math.max(p.ref || 45, 30, v); // référence jamais sous 30 km/h
     w += p.len; inv += p.len / v; invRef += p.len / ref;
   }
   return w ? Math.max(0, len * 3.6 * (inv - invRef) / w) : 0;
 }
 /** Retard (s) pour parcourir `len` mètres à v au lieu de la vitesse de référence. */
 function delayFor(len, v, ref) {
-  const r = Math.max(ref || 45, v);
+  const r = Math.max(ref || 45, 30, v);
   return Math.max(0, (len * 3.6) / Math.max(v, 3) - (len * 3.6) / r);
 }
 
@@ -211,7 +211,8 @@ function parseEvents(xml, now = Date.now()) {
       const comments = all(rec, "generalPublicComment").map((g) => ({ type: first(g, "commentType"), text: decode(first(g, "value")) }));
       const description = comments.find((c) => c.type === "description")?.text ?? null;
       const where = comments.filter((c) => c.type === "locationDescriptor").map((c) => c.text)
-        .filter((t) => t && !/^DIR |\/District|\/CEI/.test(t)).slice(0, 2);
+        .filter((t) => t && !/^DIR |\/District|\/CEI/.test(t)).slice(0, 2)
+        .map((t) => t.charAt(0).toUpperCase() + t.slice(1));
       const linkName = all(rec, "name").find((n) => /linkName/.test(n));
       const road = roadName(first(rec, "roadNumber")) ?? (linkName ? decode(first(linkName, "value")) : null);
       const source = decode(first(rec, "sourceIdentification"))?.replace(/^Direction interdépartementale des routes\//, "") ?? null;
@@ -630,6 +631,7 @@ export async function register({ io, route, store, log }) {
 
   route.get("/traffic/status", () => ({
     community: { cells: cells.size, shown: states.size, jams: jams.length, usualCells: Object.keys(usual.data).length, ...stats },
+    watchedZones: [...io.of("/").adapter.rooms.keys()].filter((r) => r.startsWith("traffic:z:")).length,
     dir: { stations: qtv.ref?.size ?? 0, measured: qtv.features.size, published: qtv.published, fetchedAt: qtv.at || null, error: qtv.error },
     events: { count: events.list.length, fetchedAt: events.at || null, error: events.error },
   }));
