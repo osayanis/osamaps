@@ -83,6 +83,12 @@ enum SafetyData {
     private static var poiTiles: [String: SafetyPoiTile] = [:]
     private static var poiRetryAt = Date.distantPast
     private static var poiBusy = false
+    private static let poiSession: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForRequest = 60
+        c.httpAdditionalHeaders = ["User-Agent": "OsaMaps-iOS/0.1"]
+        return URLSession(configuration: c)
+    }()
 
     /// bbox = (ouest, sud, est, nord), au plus 14° de côté (le serveur refuse au-delà).
     static func zones(_ b: (w: Double, s: Double, e: Double, n: Double)) async throws -> SafetyZonesResponse {
@@ -124,7 +130,17 @@ enum SafetyData {
             poiBusy = true
             defer { poiBusy = false }
             do {
-                let r = try await API.post("safety/pois", body: ["tiles": missing], as: SafetyPoisResponse.self)
+                // le serveur peut attendre Overpass jusqu'à 45 s : délai plus long que celui d'`API` (20 s)
+                var req = URLRequest(url: URL(string: "safety/pois", relativeTo: API.base)!.absoluteURL)
+                req.httpMethod = "POST"
+                req.timeoutInterval = 60
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try JSONEncoder().encode(["tiles": missing])
+                let (data, resp) = try await poiSession.data(for: req)
+                guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false else {
+                    throw API.HTTPError(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, message: "pois")
+                }
+                let r = try JSONDecoder().decode(SafetyPoisResponse.self, from: data)
                 for (k, v) in r.tiles { poiTiles[k] = v }
                 if let s = r.retryAfter, s > 0 { poiRetryAt = Date().addingTimeInterval(s) }
             } catch {
