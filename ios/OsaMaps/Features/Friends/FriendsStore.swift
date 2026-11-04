@@ -428,6 +428,19 @@ final class FriendsStore {
             let token = (isApp ? (path.first ?? q["token"] ?? "") : (q["suivre"] ?? "")).lowercased()
             guard token.count == 36, token.allSatisfy({ $0 == "-" || $0.isHexDigit }) else { return }
             FriendsFollow.shared.open(token)
+        #if DEBUG
+        // tests dans le Simulateur : osamaps://friends-test/fiche?code=CODE, osamaps://friends-test/share
+        case "friends-test":
+            if path.first == "fiche", let f = friends.first(where: { $0.code == q["code"] }) {
+                Core.shared.openPanel("friend", data: f.pid)
+            } else if path.first == "share" {
+                Task {
+                    guard let t = await startTrip() else { return }
+                    NSLog("OsaMaps friends: lien de suivi %@", t.url.absoluteString)
+                    Core.shared.openPanel("share")
+                }
+            }
+        #endif
         default: break
         }
     }
