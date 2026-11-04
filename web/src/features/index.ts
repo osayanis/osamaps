@@ -1,5 +1,6 @@
 import type { Feature } from "../core/registry";
 import { reportsFeature } from "./reports";
+import { friends } from "./friends";
 
 /**
  * Les fonctionnalités d'OsaMaps. Chaque module ajoute SA ligne d'import et son entrée dans la
@@ -7,4 +8,5 @@ import { reportsFeature } from "./reports";
  */
 export const FEATURES: Feature[] = [
   reportsFeature,
+  friends,
 ];

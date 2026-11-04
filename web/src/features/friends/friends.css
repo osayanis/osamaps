@@ -1,0 +1,170 @@
+/* Amis & partage — sobriété Osa : noir, blanc en opacités, couleur seulement pour les états. */
+
+/* --- rail ---------------------------------------------------------------------------------- */
+.friends-rail-btn { position: relative; color: var(--text); }
+.friends-rail-btn.is-active { background: var(--text); color: var(--ink); }
+.friends-badge {
+  position: absolute; top: -3px; right: -3px; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--text); color: var(--ink); font-size: 12px; font-weight: 750;
+  display: grid; place-items: center; border: 2px solid var(--bg);
+}
+.friends-rail-live { position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); border: 2px solid var(--text); }
+
+/* --- panneau du bas ------------------------------------------------------------------------ */
+.friends-sheet {
+  position: relative; z-index: 3; /* au-dessus des contrôles MapLibre (attribution) */
+  border-radius: var(--radius-l) var(--radius-l) 0 0; border-bottom: 0;
+  padding: 14px 18px calc(18px + var(--safe-bottom));
+  max-height: min(72vh, 640px); display: flex; flex-direction: column; gap: 12px;
+  animation: friends-up 260ms var(--ease-drawer);
+}
+@keyframes friends-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.friends-head { display: flex; align-items: center; gap: 6px; }
+.friends-head h2 { flex: 1; margin: 0; font-size: 20px; font-weight: 750; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends-icon-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--surface-hi); color: var(--text);
+  display: grid; place-items: center; cursor: pointer; flex: none; transition: transform 140ms var(--ease-out);
+}
+.friends-icon-btn:active { transform: scale(0.94); }
+.friends-scroll { overflow-y: auto; display: flex; flex-direction: column; gap: 14px; margin: 0 -18px; padding: 0 18px 4px; overscroll-behavior: contain; }
+.friends-block { display: flex; flex-direction: column; gap: 4px; }
+.friends-label { margin: 0; font-size: 12px; font-weight: 650; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; display: flex; align-items: center; gap: 6px; }
+.friends-muted { margin: 0; color: var(--dim); font-size: 14px; line-height: 1.45; }
+.friends-error { margin: 0; color: var(--jam); font-size: 14px; font-weight: 600; flex-basis: 100%; }
+.friends-danger { color: var(--jam) !important; }
+
+.friends-mycode { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+.friends-code { margin: 2px 0 0; font-size: 28px; font-weight: 800; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+.friends-mycode-actions { display: flex; align-items: center; gap: 8px; }
+
+.friends-row-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.friends-input {
+  flex: 1; min-width: 0; height: 46px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 600; outline: none;
+}
+.friends-input::placeholder { color: var(--faint); font-weight: 500; }
+.friends-input:focus { border-color: var(--line-hi); background: var(--surface-hi); }
+.friends-code-input { letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
+.friends-code-input::placeholder { letter-spacing: 0; }
+.pill:disabled { opacity: 0.35; cursor: default; transform: none; }
+.friends-sheet .pill, .friends-settings .pill, .friends-follow .pill { min-height: 46px; justify-content: center; text-decoration: none; }
+
+.friends-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; min-height: 56px; }
+.friends-row + .friends-row { border-top: 1px solid var(--line); }
+.friends-row-btn { width: 100%; border: 0; background: none; text-align: left; cursor: pointer; color: var(--text); padding: 8px 4px; margin: 0 -4px; width: calc(100% + 8px); border-radius: var(--radius-s); }
+.friends-row-btn:active { background: var(--surface); }
+.friends-row-btn > svg { color: var(--faint); flex: none; }
+.friends-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.friends-row-text strong { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends-row-text span { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends-row-text .is-online { color: var(--text); }
+.friends-row-text .is-driving { color: var(--ok); }
+
+.friends-avatar {
+  width: 42px; height: 42px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-hi); color: var(--text); font-weight: 750; font-size: 15px; letter-spacing: 0.02em;
+  border: 2px solid transparent;
+}
+.friends-avatar.is-live { background: var(--text); color: var(--ink); }
+
+.friends-hint { display: flex; gap: 12px; padding: 14px 16px; color: var(--dim); }
+.friends-hint > svg { flex: none; margin-top: 2px; }
+.friends-hint > div { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.friends-hint strong { color: var(--text); font-size: 15px; }
+.friends-hint span { font-size: 13px; line-height: 1.45; }
+.friends-hint .pill { margin-top: 4px; min-height: 40px; padding: 8px 16px; }
+
+.friends-detail { display: flex; align-items: center; gap: 14px; }
+.friends-detail .friends-avatar { width: 56px; height: 56px; font-size: 19px; }
+.friends-detail strong { white-space: normal; }
+.friends-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.friends-actions .pill { flex: 1; }
+.friends-actions .btn-ghost { flex: none; }
+.friends-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.friends-confirm { display: inline-flex; gap: 2px; }
+
+.friends-link { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.friends-live-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(52, 199, 89, 0.18); }
+.friends-live-dot.is-off { background: var(--faint); box-shadow: none; }
+
+/* --- réglages ------------------------------------------------------------------------------ */
+.friends-settings { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.friends-settings h3 { margin: 0 0 2px; font-size: 17px; }
+.friends-setting { display: flex; align-items: center; gap: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.friends-setting > div { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.friends-setting strong { font-size: 15px; }
+.friends-setting span { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.friends-setting.is-disabled { opacity: 0.45; }
+.friends-switch {
+  flex: none; width: 52px; height: 32px; border-radius: 999px; border: 0; padding: 3px; cursor: pointer;
+  background: var(--surface-hi); transition: background 200ms var(--ease-out);
+}
+.friends-switch span { display: block; width: 26px; height: 26px; border-radius: 50%; background: var(--dim); transition: transform 200ms var(--ease-out), background 200ms var(--ease-out); }
+.friends-switch.is-on { background: var(--text); }
+.friends-switch.is-on span { transform: translateX(20px); background: var(--ink); }
+
+/* --- marqueurs d'amis ---------------------------------------------------------------------- */
+.friends-marker { position: relative; width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; }
+.friends-marker-dot {
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--text); color: var(--ink); font: 750 13px/1 var(--font); letter-spacing: 0.02em;
+  border: 2.5px solid #0a0a0f; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.friends-marker.is-driving .friends-marker-dot { border-color: var(--ok); }
+.friends-marker-cap { position: absolute; inset: -8px; color: var(--text); pointer-events: none; }
+.friends-marker-cap svg { display: block; }
+.friends-marker.is-driving .friends-marker-cap { color: var(--ok); }
+.friends-marker-label {
+  position: absolute; top: 55px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  padding: 3px 8px; border-radius: 999px; background: rgba(10, 10, 15, 0.82); color: var(--text);
+  font: 650 12px/1.3 var(--font); border: 1px solid var(--line); pointer-events: none;
+}
+
+/* --- vue « suivre un trajet » -------------------------------------------------------------- */
+/* Dans cette vue, l'app devient un écran de lecture seule : on masque les autres emplacements. */
+body.friends-following .slot-top,
+body.friends-following .slot-rail,
+body.friends-following .slot-hud,
+body.friends-following .slot-sheet,
+body.friends-following .slot-overlay > :not(.friends-follow):not([class*="toast"]) { display: none !important; }
+
+.friends-follow { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.friends-follow > * { pointer-events: auto; }
+.friends-follow-top {
+  position: absolute; top: calc(12px + var(--safe-top)); left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px;
+  font-weight: 700; font-size: 15px; white-space: nowrap; max-width: calc(100% - 32px);
+}
+.friends-follow-tag { font-size: 12px; font-weight: 650; color: var(--dim); }
+.friends-follow-recenter { position: absolute; right: 16px; bottom: calc(250px + var(--safe-bottom)); box-shadow: var(--shadow); }
+.friends-follow-card {
+  position: absolute; left: 12px; right: 12px; bottom: calc(12px + var(--safe-bottom)); max-width: 520px; margin: 0 auto;
+  border-radius: var(--radius-l); padding: 18px 20px; display: flex; flex-direction: column; gap: 8px;
+  animation: friends-up 260ms var(--ease-drawer);
+}
+.friends-follow-card h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+.friends-follow-dest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends-follow-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.friends-follow-stats > div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.friends-follow-stats strong { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.friends-follow-foot { margin: 6px 0 0; font-size: 12px; color: var(--faint); }
+.friends-follow-arrived { display: flex; align-items: center; gap: 14px; }
+.friends-follow-check { width: 48px; height: 48px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--ok); color: #000; animation: friends-pop 280ms var(--ease-out); }
+@keyframes friends-pop { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.friends-follow-car {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--text); color: var(--ink); border: 3px solid #0a0a0f; box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.16), 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.friends-follow-car svg { display: block; }
+.friends-follow-car.is-arrived { background: var(--ok); }
+.friends-follow-car.is-arrived svg { display: none; }
+.friends-follow-dest { width: 30px; height: 34px; display: grid; place-items: center; }
+.friends-follow-pin {
+  display: block; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); margin-bottom: 4px;
+  background: var(--text); border: 3px solid #0a0a0f; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .friends-sheet, .friends-follow-card, .friends-follow-check { animation: none; }
+}
