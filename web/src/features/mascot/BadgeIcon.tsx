@@ -11,6 +11,7 @@ const PATHS: Record<Kind, string> = {
   sunrise: "M3 18h18 M7 18a5 5 0 0 1 10 0 M12 4v4 M5.6 9.6l1.8 1.8 M18.4 9.6l-1.8 1.8 M9 6l3-2 3 2",
   megaphone: "M4 10v4h3l7 4V6L7 10H4z M17.5 9a4 4 0 0 1 0 6",
   check: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M8 12.5l2.7 2.7L16 9.8",
+  vote: "M4 20h16 M6 20v-7h12v7 M9 9l2 2 4-5",
   compass: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M15.5 8.5l-2 5-5 2 2-5z",
   calendar: "M5 5h14v15H5z M5 10h14 M9 3v4 M15 3v4 M9 14l2 2 4-4",
 };
