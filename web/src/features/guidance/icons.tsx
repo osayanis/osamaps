@@ -65,17 +65,15 @@ function shapeFor(kind: ManeuverKind): Shape {
 export function ManeuverIcon({ kind, exit, size = 64 }: { kind: ManeuverKind; exit?: number | null; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 48 48", fill: "none", stroke: "currentColor", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   if (kind === "roundabout" || kind === "roundabout-exit") {
-    // sens giratoire français (anti-horaire) : on entre par le bas, on tourne par la droite
+    // sens giratoire français (anti-horaire) : on entre par le bas, on tourne par la droite.
+    // Le numéro de sortie est écrit en gros à côté (« 2e sortie »), pas dans l'icône : plus lisible.
     const exitOnly = kind === "roundabout-exit";
     return (
       <svg {...common} strokeWidth={4}>
-        <circle cx="24" cy="23" r="9.5" opacity={0.32} />
-        <path d="M24 44 L24 32.5 A9.5 9.5 0 0 0 24 13.5 L24 5" opacity={exitOnly ? 0.32 : 1} />
-        <path d={head(24, 5, 0)} />
-        {exitOnly && <path d="M24 13.5 L24 5" />}
-        {!exitOnly && exit ? (
-          <text x="24" y="23" dy="0.36em" textAnchor="middle" fill="currentColor" stroke="none" fontSize="11.5" fontWeight="800" fontFamily="var(--font)">{exit}</text>
-        ) : null}
+        <circle cx="24" cy="25" r="12" opacity={0.32} />
+        <path d="M24 46 L24 37 A12 12 0 0 0 24 13 L24 4" opacity={exitOnly ? 0.32 : 1} />
+        <path d={head(24, 4, 0)} />
+        {exitOnly && <path d="M24 13 L24 4" />}
       </svg>
     );
   }
