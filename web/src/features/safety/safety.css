@@ -1,0 +1,79 @@
+/* Sécurité routière — la couleur ne sert qu'à l'état « danger » (jaune). */
+
+/* ---------- HUD : bandeau zone de danger ---------- */
+.safety-hud {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius-m);
+  border-color: rgba(255, 204, 0, 0.45);
+  animation: safety-in 220ms var(--ease-out);
+}
+.safety-hud-icon {
+  flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--danger); color: var(--ink);
+}
+.safety-hud-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.safety-hud-text strong { font-size: 16px; font-weight: 700; color: var(--text); }
+.safety-hud-text span { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* ---------- aperçu : ZFE ---------- */
+.safety-zfe {
+  display: flex; align-items: center; gap: 12px; margin: 0 12px 8px; padding: 12px 14px;
+  background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  animation: safety-in 220ms var(--ease-out);
+}
+.safety-zfe-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-hi); color: var(--text); }
+.safety-zfe.is-forbidden { border-color: rgba(255, 204, 0, 0.45); }
+.safety-zfe.is-forbidden .safety-zfe-icon { background: var(--danger); color: var(--ink); }
+.safety-zfe-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.safety-zfe-text strong { font-size: 15px; font-weight: 700; }
+.safety-zfe-text span { font-size: 13px; color: var(--dim); }
+
+/* ---------- « Tu es passager ? » ---------- */
+.safety-passenger {
+  position: absolute; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center;
+  padding: 16px 12px calc(16px + var(--safe-bottom)); background: rgba(0, 0, 0, 0.45);
+  animation: fade-in 200ms var(--ease-out);
+}
+.safety-passenger-card {
+  width: min(520px, 100%); border-radius: var(--radius-l); padding: 22px 20px 18px;
+  animation: safety-up 260ms var(--ease-drawer);
+}
+.safety-passenger-card h3 { margin: 0 0 6px; font-size: 22px; font-weight: 750; }
+.safety-passenger-card p { margin: 0 0 18px; color: var(--dim); font-size: 15px; line-height: 1.45; }
+.safety-passenger-actions { display: flex; flex-direction: column; gap: 10px; }
+.safety-passenger-actions .pill { justify-content: center; min-height: 52px; font-size: 16px; }
+
+/* ---------- Réglages ---------- */
+.safety-settings { padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.safety-settings h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; }
+.safety-settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 52px; padding: 6px 0; border-top: 1px solid var(--line); cursor: pointer;
+}
+.safety-settings-row > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.safety-settings-label { font-weight: 600; font-size: 15px; }
+.safety-settings-hint { font-size: 12.5px; color: var(--faint); }
+.safety-settings-critair { flex-direction: column; align-items: stretch; cursor: default; padding: 10px 0; }
+.safety-chips { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.safety-chip {
+  height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+  font-weight: 700; font-size: 14px; cursor: pointer; transition: transform 140ms var(--ease-out), background 140ms var(--ease-out);
+}
+.safety-chip:active { transform: scale(0.95); }
+.safety-chip.is-on { background: var(--text); color: var(--ink); border-color: transparent; }
+.safety-switch {
+  appearance: none; -webkit-appearance: none; flex: none; position: relative; margin: 0;
+  width: 46px; height: 28px; border-radius: 999px; background: var(--surface-hi); border: 1px solid var(--line-hi);
+  cursor: pointer; transition: background 160ms var(--ease-out);
+}
+.safety-switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--dim); transition: transform 180ms var(--ease-out), background 160ms var(--ease-out);
+}
+.safety-switch:checked { background: var(--text); }
+.safety-switch:checked::after { transform: translateX(18px); background: var(--ink); }
+.safety-switch:focus-visible, .safety-chip:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.safety-settings-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+
+@keyframes safety-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes safety-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
