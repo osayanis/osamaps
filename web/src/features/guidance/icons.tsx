@@ -77,6 +77,14 @@ export function ManeuverIcon({ kind, exit, size = 64 }: { kind: ManeuverKind; ex
       </svg>
     );
   }
+  if (kind === "waypoint") {
+    return (
+      <svg {...common} strokeWidth={3.5}>
+        <path d="M14 44 V6" />
+        <path d="M14 7 H36 L31 15.5 L36 24 H14" />
+      </svg>
+    );
+  }
   if (kind === "arrive" || kind === "arrive-left" || kind === "arrive-right") {
     return (
       <svg {...common} strokeWidth={3.5}>

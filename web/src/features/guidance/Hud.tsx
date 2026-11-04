@@ -2,7 +2,7 @@ import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { useGuide, type GuideAlert } from "./state";
 import { thenManeuverIndex, finishArrival } from "./engine";
-import { kindOf, mainStreet, roundaboutExit, roundaboutExitTarget, shortLabel, isArrive, ordinalShort } from "./maneuvers";
+import { kindOf, mainStreet, roundaboutExit, roundaboutExitTarget, shortLabel, waypointName, isArrive, ordinalShort } from "./maneuvers";
 import { ManeuverIcon, LaneIcon, AlertIcon, IconFlag, IconReroute } from "./icons";
 
 /** HUD de conduite (slot "hud") : prochaine manœuvre, « puis », alertes, vitesse. */
@@ -35,7 +35,7 @@ function ManeuverCard() {
   const dist = along === 0 && distToNext === 0 ? m.shapeIndex > 0 ? route.maneuvers[0].length : 0 : distToNext;
   const street = kind === "roundabout"
     ? (roundaboutExitTarget(m)?.name ?? mainStreet(m))
-    : mainStreet(m);
+    : kind === "waypoint" ? waypointName(m) : mainStreet(m);
   const label = isArrive(kind) ? destName || shortLabel(m) : street || shortLabel(m);
   const sub = kind === "roundabout" && exit ? `${ordinalShort(exit)} sortie` : isArrive(kind) && kind !== "arrive" ? shortLabel(m) : null;
   const imminent = dist <= nowThreshold && !isArrive(kind);
