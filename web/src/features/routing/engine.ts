@@ -275,6 +275,7 @@ export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal): 
     start = end;
   }
   const ranges: { from: number; kmh: number | null }[] = [];
+  let failed = 0;
   for (const [a, b] of chunks) {
     if (signal?.aborted) break;
     const slice = coords.slice(a, b + 1);
@@ -299,6 +300,7 @@ export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal): 
     } catch (e) {
       if (signal?.aborted) break;
       // un morceau raté : vitesse inconnue sur ce morceau, on continue
+      failed++;
       ranges.push({ from: a, kmh: null });
       continue;
     }
@@ -309,6 +311,8 @@ export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal): 
       else ranges.push({ from, kmh: e.kmh });
     }
   }
+  // tout a échoué (hors ligne) : on n'invente pas de « limites inconnues », on laisse réessayer
+  if (failed === chunks.length) throw new RouteError("Limites de vitesse indisponibles.", true);
   ranges.sort((x, y) => x.from - y.from);
   if (!ranges.length || ranges[0].from > 0) ranges.unshift({ from: 0, kmh: null });
   return ranges.filter((r, i, arr) => i === 0 || r.kmh !== arr[i - 1].kmh);

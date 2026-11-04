@@ -1,13 +1,16 @@
 /* Itinéraires — panneau d'aperçu, marqueurs, réglages. Classes préfixées .routing- */
 
 .routing-sheet {
+  /* au-dessus des contrôles MapLibre (attribution, z-index 2) */
+  position: relative;
+  z-index: 3;
   border-radius: var(--radius-l) var(--radius-l) 0 0;
   border-bottom: 0;
   padding: 6px 16px calc(14px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: min(78vh, 720px);
+  max-height: min(64vh, 620px);
   animation: routing-up 260ms var(--ease-out);
 }
 @keyframes routing-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -84,7 +87,8 @@
 .routing-seg { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 12px; background: rgba(0, 0, 0, 0.3); }
 .routing-seg button { min-height: 40px; border: 0; border-radius: 10px; background: transparent; color: var(--dim); font-weight: 650; cursor: pointer; transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out); }
 .routing-seg button.is-on { background: var(--surface-hi); color: var(--text); }
-.routing-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.routing-quick { display: flex; gap: 6px; }
+.routing-quick .routing-mini { flex: 1 1 auto; justify-content: center; padding: 0 8px; }
 .routing-mini {
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;

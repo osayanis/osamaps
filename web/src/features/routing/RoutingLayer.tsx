@@ -19,15 +19,25 @@ const empty: FC = { type: "FeatureCollection", features: [] };
 const line = (coords: LngLat[], idx: number): GeoJSON.Feature<GeoJSON.LineString, { idx: number }> =>
   ({ type: "Feature", properties: { idx }, geometry: { type: "LineString", coordinates: coords } });
 
-function firstSymbolLayer(map: MLMap): string | undefined {
-  return map.getStyle().layers?.find((l) => l.type === "symbol")?.id;
+/**
+ * Calque devant lequel insérer le tracé : le premier libellé du fond de carte situé APRÈS toutes
+ * ses routes. (Le premier calque « symbol » ne suffit pas : certains styles mettent des libellés
+ * d'eau avant les routes, qui se dessineraient alors par-dessus notre tracé.)
+ */
+function labelLayer(map: MLMap): string | undefined {
+  const layers = map.getStyle().layers ?? [];
+  const isBase = (l: (typeof layers)[number]) => !("source" in l) || map.getSource(String(l.source))?.type !== "geojson";
+  let last = -1;
+  layers.forEach((l, i) => { if (l.type !== "symbol" && isBase(l)) last = i; });
+  for (let i = last + 1; i < layers.length; i++) if (layers[i].type === "symbol" && isBase(layers[i])) return layers[i].id;
+  return undefined;
 }
 
 function addLayers(map: MLMap) {
   for (const id of [SRC_ALT, SRC_ACTIVE, SRC_PASSED]) {
     if (!map.getSource(id)) map.addSource(id, { type: "geojson", data: empty, lineMetrics: false });
   }
-  const before = firstSymbolLayer(map);
+  const before = labelLayer(map);
   const add = (spec: maplibregl.LayerSpecification) => { if (!map.getLayer(spec.id)) map.addLayer(spec, before); };
   const round = { "line-cap": "round", "line-join": "round" } as const;
   add({ id: "routing-alt-casing", type: "line", source: SRC_ALT, layout: round, paint: { "line-color": "#000", "line-opacity": 0.35, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 6, 16, 12] } });
@@ -35,7 +45,7 @@ function addLayers(map: MLMap) {
   // zone de clic large et invisible (au doigt, une ligne de 4 px est introuvable)
   add({ id: "routing-alt-hit", type: "line", source: SRC_ALT, layout: round, paint: { "line-color": "#000", "line-opacity": 0, "line-width": 28 } });
   add({ id: "routing-passed-line", type: "line", source: SRC_PASSED, layout: round, paint: { "line-color": "#ffffff", "line-opacity": 0.22, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 3.5, 16, 9] } });
-  add({ id: "routing-line-glow", type: "line", source: SRC_ACTIVE, layout: round, paint: { "line-color": "#ffffff", "line-opacity": 0.16, "line-blur": 6, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 12, 16, 26] } });
+  add({ id: "routing-line-glow", type: "line", source: SRC_ACTIVE, layout: round, paint: { "line-color": "#ffffff", "line-opacity": 0.14, "line-blur": ["interpolate", ["linear"], ["zoom"], 8, 8, 16, 14], "line-width": ["interpolate", ["linear"], ["zoom"], 8, 16, 16, 30] } });
   add({ id: "routing-line-casing", type: "line", source: SRC_ACTIVE, layout: round, paint: { "line-color": "#0a0a0f", "line-opacity": 0.8, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 7, 16, 14] } });
   add({ id: "routing-line", type: "line", source: SRC_ACTIVE, layout: round, paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 4, 16, 9] } });
 }
@@ -74,6 +84,7 @@ export function RoutingLayer() {
   const meta = useRouting((s) => s.meta);
   const sheetHeight = useRouting((s) => s.sheetHeight);
   const pickOnMap = useRouting((s) => s.pickOnMap);
+  const status = useRouting((s) => s.status);
   const styleTick = useRef(0);
   const destMarker = useRef<maplibregl.Marker | null>(null);
   const stopMarkers = useRef<maplibregl.Marker[]>([]);
@@ -160,7 +171,8 @@ export function RoutingLayer() {
     const pos = core().position?.coord;
     if (pos) b.extend(pos);
     const h = window.innerHeight;
-    const bottom = Math.min(h * 0.62, (sheetHeight || h * 0.4) + 24);
+    // on garde au moins ~160 px de carte utile au-dessus du panneau
+    const bottom = Math.max(40, Math.min(h - 96 - 160, (sheetHeight || h * 0.4) + 24));
     const raf = requestAnimationFrame(() => {
       map.fitBounds(b, {
         padding: { top: 96, bottom, left: 36, right: 64 },
@@ -175,6 +187,16 @@ export function RoutingLayer() {
   }, [map, mode, routes, sheetHeight]);
 
   useEffect(() => { if (mode === "browse") fitted.current = { key: "", touched: false, height: 0 }; }, [mode]);
+
+  // pas d'itinéraire : on montre au moins où se trouve la destination
+  useEffect(() => {
+    if (!map || mode !== "preview" || status !== "error" || !destination) return;
+    const b = new maplibregl.LngLatBounds(destination.coord, destination.coord);
+    const pos = core().position?.coord;
+    if (pos) b.extend(pos);
+    const h = window.innerHeight;
+    map.fitBounds(b, { padding: { top: 96, bottom: Math.min(h - 256, routing().sheetHeight + 24), left: 48, right: 64 }, maxZoom: 14, duration: 400 });
+  }, [map, mode, status, destination]);
 
   // marqueur d'arrivée
   useEffect(() => {

@@ -46,6 +46,7 @@ function queued(fn) {
   return run;
 }
 
+let logFn = () => {};
 async function valhalla(endpoint, body) {
   let r;
   try {
@@ -55,13 +56,15 @@ async function valhalla(endpoint, body) {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(25_000),
     });
-  } catch {
+  } catch (e) {
+    logFn(`routing : ${endpoint} injoignable (${e?.name ?? "erreur"})`);
     throw new HttpError(502, "service d'itinéraire injoignable");
   }
   const data = await r.json().catch(() => null);
   if (r.ok && data) return data;
   // 400 de Valhalla = pas d'itinéraire possible (point hors réseau, trop loin…) : on relaie le message
   if (r.status === 400 && data) throw new HttpError(422, String(data.error || "aucun itinéraire trouvé").slice(0, 200));
+  logFn(`routing : ${endpoint} a répondu ${r.status} ${String(data?.error ?? "").slice(0, 120)}`);
   throw new HttpError(502, `service d'itinéraire indisponible (${r.status})`);
 }
 
@@ -98,6 +101,7 @@ function cleanRoute(body) {
 }
 
 export async function register({ route, log }) {
+  logFn = log;
   route.post("/routing/route", async ({ body }) => {
     const req = cleanRoute(body);
     const k = "r" + key(req);

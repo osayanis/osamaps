@@ -145,7 +145,7 @@ function Skeleton() {
 function DepartPanel({ depart }: { depart: DepartChoice | null }) {
   const [type, setType] = useState<1 | 2>(depart?.type ?? 1);
   const [value, setValue] = useState(depart?.value ?? localStamp(new Date(Date.now() + 30 * 60_000)));
-  const quick = [15, 30, 60, 120];
+  const quick = [15, 30, 60];
   const apply = (t: 1 | 2, v: string) => {
     if (!v) return;
     // une heure passée n'a pas de sens : on remet « maintenant »
