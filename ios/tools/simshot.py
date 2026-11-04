@@ -1,0 +1,42 @@
+import json, re, subprocess, sys, time, shlex
+
+out, app, *rest = sys.argv[1:]
+steps, args, wait = [], [], 6.0
+for a in rest:
+    if a.startswith("--args="): args = shlex.split(a[7:])
+    elif a.startswith("--wait="): wait = float(a[7:])
+    elif a.startswith("--url="): steps.append(("url", a[6:]))
+    elif a.startswith("--then="): steps.append(("sleep", float(a[7:])))
+
+def sh(*c, check=True, timeout=180):
+    return subprocess.run(c, check=check, capture_output=True, text=True, timeout=timeout).stdout
+
+runtimes = json.loads(sh("xcrun", "simctl", "list", "runtimes", "-j"))["runtimes"]
+ios = [r for r in runtimes if r.get("platform") == "iOS" and r.get("isAvailable")]
+if not ios: sys.exit("Pas de runtime iOS installé (téléchargement : xcodebuild -downloadPlatform iOS)")
+rt = ios[-1]
+devs = json.loads(sh("xcrun", "simctl", "list", "devices", "-j"))["devices"].get(rt["identifier"], [])
+dev = next((d for d in devs if d["name"] == "OsaMaps-Test"), None)
+if not dev:
+    types = [t for t in rt.get("supportedDeviceTypes", []) if re.match(r"iPhone \d+ Pro$", t["name"])] or \
+            [t for t in rt.get("supportedDeviceTypes", []) if t["name"].startswith("iPhone")]
+    udid = sh("xcrun", "simctl", "create", "OsaMaps-Test", types[-1]["identifier"], rt["identifier"]).strip()
+else:
+    udid = dev["udid"]
+sh("xcrun", "simctl", "boot", udid, check=False)
+sh("xcrun", "simctl", "bootstatus", udid, "-b", timeout=300)
+sh("xcrun", "simctl", "status_bar", udid, "override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "100", check=False)
+sh("xcrun", "simctl", "location", udid, "set", "46.5646,3.3332", check=False)
+bid = "fr.osalabs.osamaps"
+sh("xcrun", "simctl", "terminate", udid, bid, check=False)
+sh("xcrun", "simctl", "install", udid, app)
+sh("xcrun", "simctl", "launch", udid, bid, *args)
+time.sleep(3)
+for kind, v in steps:
+    if kind == "url": sh("xcrun", "simctl", "openurl", udid, v); time.sleep(1.5)
+    else: time.sleep(v)
+time.sleep(wait)
+sh("xcrun", "simctl", "io", udid, "screenshot", "--type=png", out)
+logs = sh("xcrun", "simctl", "spawn", udid, "log", "show", "--last", "2m", "--style", "compact", "--predicate", 'process == "OsaMaps" AND (messageType == error OR eventMessage CONTAINS "OsaMaps")', check=False, timeout=60)
+print("capture :", out)
+print("\n".join(logs.strip().splitlines()[-15:]))
