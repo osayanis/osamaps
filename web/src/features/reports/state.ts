@@ -146,7 +146,7 @@ export async function sendReport(type: Kind, sub: string | null, coord: LngLat, 
     reports().upsert(report);
     if (merged) {
       useReports.setState((s) => ({ voted: { ...s.voted, [report.id]: "still" } }));
-      emit("points:earn", { amount: 2, reason: "Signalement confirmé" });
+      emit("points:earn", { amount: 2, reason: "Vote : toujours là (doublon rejoint)" });
       emit("toast", { text: `Déjà signalé : merci, ta confirmation compte`, tone: "good" });
     } else {
       useReports.setState((s) => ({ mine: { ...s.mine, [report.id]: report.expiresAt } }));
@@ -173,7 +173,7 @@ export async function vote(id: string, v: Vote) {
     });
     if (res.removed || !res.report) reports().remove(id);
     else reports().upsert(res.report);
-    if (!mine[id] && !res.already) emit("points:earn", { amount: 1, reason: "Merci pour ta confirmation" });
+    if (!mine[id] && !res.already) emit("points:earn", { amount: 1, reason: v === "still" ? "Vote : toujours là" : "Vote : plus là" });
   } catch (e) {
     if (String(e).startsWith("Error: 404")) reports().remove(id);
     else emit("toast", { text: errorText(e, "Vote non envoyé"), tone: "warn" });
