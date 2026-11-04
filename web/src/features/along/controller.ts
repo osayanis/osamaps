@@ -1,7 +1,7 @@
 import type { Map as MLMap } from "maplibre-gl";
 import { core, useCore, type Route } from "../../core/store";
 import { emit, on } from "../../core/bus";
-import { cumulativeDistances, formatDistance } from "../../core/geometry";
+import { cumulativeDistances, formatDistance, snapToLine } from "../../core/geometry";
 import { fetchEvBbox, fetchEvRoute, fetchFuelBbox, fetchFuelRoute, fetchRestAhead, thin, type Bbox } from "./api";
 import { alongPrefs, useAlongPrefs } from "./prefs";
 import { along$, useAlong } from "./state";
@@ -18,16 +18,23 @@ import { rankOnRoute } from "./suggest";
 
 let cumCache: { id: string; cum: number[] } | null = null;
 function cumOf(route: Route) {
-  if (cumCache?.id !== route.id) cumCache = { id: route.id, cum: cumulativeDistances(route.coords) };
+  if (cumCache?.id !== route.id) { cumCache = { id: route.id, cum: cumulativeDistances(route.coords) }; snapIndex = 0; }
   return cumCache.cum;
 }
 /** Mètres déjà parcourus sur l'itinéraire actif (0 hors conduite). */
+let snapIndex = 0;
 export function currentAlong(): number {
-  const { routes, activeRoute, progress, mode } = core();
+  const { routes, activeRoute, progress, mode, position } = core();
   const route = routes[activeRoute];
-  if (!route || mode !== "drive" || !progress) return 0;
+  if (!route || mode !== "drive") return 0;
   const cum = cumOf(route);
-  return cum[Math.min(cum.length - 1, Math.max(0, progress.shapeIndex))] ?? 0;
+  if (progress) return cum[Math.min(cum.length - 1, Math.max(0, progress.shapeIndex))] ?? 0;
+  // pas encore de progression (module guidance absent ou en retard) : on projette la position
+  if (!position) return 0;
+  const sn = snapToLine(position.coord, route.coords, cum, Math.max(0, snapIndex - 5));
+  if (sn.offset > 300) { const full = snapToLine(position.coord, route.coords, cum); snapIndex = full.index; return full.along; }
+  snapIndex = sn.index;
+  return sn.along;
 }
 
 // ——— stations autour de la carte ————————————————————————————————————————

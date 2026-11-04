@@ -23,6 +23,7 @@ const FUEL_TTL = 10 * 60_000;
 const IRVE_TTL = 24 * 3600_000;
 const REST_TTL = 14 * 24 * 3600_000;
 const TILE = 0.25;
+const IRVE_FORMAT = 2; // à incrémenter si la normalisation des bornes change (invalide le cache disque)
 
 // ---------- géométrie (mêmes formules que web/src/core/geometry.ts) ----------
 const R = 6371008.8;
@@ -222,9 +223,11 @@ async function loadIrve() {
 }
 const cleanOperator = (s) => String(s).split("|")[0].trim().slice(0, 60);
 function cleanName(nom, op) {
-  const n = String(nom ?? "").trim();
+  const n = titleCase(String(nom ?? "").trim());
   // beaucoup de noms sont des identifiants techniques (« Opérateur/MBSSYTGNDB ») : on les écarte
   if (!n || /\/[A-Z0-9-]{6,}$/i.test(n) || /^[A-Z0-9*_-]{8,}$/.test(n)) return op || "Borne de recharge";
+  // nom réduit à une ville (« MOULINS ») : on précise l'opérateur
+  if (op && !n.toLowerCase().includes(op.toLowerCase().split(" ")[0]) && n.length <= 24 && !/\s-\s|\d/.test(n)) return `${op} · ${n}`.slice(0, 80);
   return n.slice(0, 80);
 }
 
@@ -237,7 +240,7 @@ async function overpass(query) {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "data=" + encodeURIComponent(query),
-      }, 30_000);
+      }, 60_000); // Overpass public est souvent lent (30-40 s) : on patiente, c'est en arrière-plan
     } catch (e) { last = e; }
   }
   throw last;
@@ -250,10 +253,10 @@ export async function register({ route, store, log }) {
   const irveDisk = await store.collection("along-irve", { at: 0, items: [] });
   const irve = cached("bornes IRVE", IRVE_TTL, async () => {
     const items = await loadIrve();
-    irveDisk.data = { at: Date.now(), items };
+    irveDisk.data = { v: IRVE_FORMAT, at: Date.now(), items };
     return items;
   }, log);
-  if (irveDisk.data.items?.length) irve.seed(irveDisk.data.items, irveDisk.data.at);
+  if (irveDisk.data.v === IRVE_FORMAT && irveDisk.data.items?.length) irve.seed(irveDisk.data.items, irveDisk.data.at);
 
   const restDisk = await store.collection("along-rest-tiles", {});
   let overpassBusyUntil = 0;
@@ -267,7 +270,7 @@ export async function register({ route, store, log }) {
     const s = y * TILE, w = x * TILE, n = s + TILE, e = w + TILE;
     try {
       restInFlight++;
-      const d = await overpass(`[out:json][timeout:20];nwr[highway~"^(rest_area|services)$"](${s},${w},${n},${e});out center tags;`);
+      const d = await overpass(`[out:json][timeout:50];nwr[highway~"^(rest_area|services)$"](${s},${w},${n},${e});out center tags;`);
       const items = (d.elements ?? []).map((el) => {
         const lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
