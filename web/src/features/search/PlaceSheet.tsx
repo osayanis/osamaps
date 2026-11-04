@@ -28,7 +28,7 @@ export function toPlaceData(d: unknown): PlaceData | null {
     typeLabel: typeof o.typeLabel === "string" ? o.typeLabel : undefined,
     time: typeof o.time === "number" ? o.time : undefined,
     from: o.from as PlaceData["from"],
-    needsAddress: !!o.needsAddress || !o.detail,
+    needsAddress: typeof o.needsAddress === "boolean" ? o.needsAddress : !o.detail,
   };
 }
 
@@ -58,7 +58,7 @@ function PlaceCard({ place }: { place: PlaceData }) {
       .then((a) => { setAddr(a); setAddrState(a ? "idle" : "none"); })
       .catch((e) => { if ((e as Error).name !== "AbortError") setAddrState("none"); });
     return () => ctrl.abort();
-  }, [place.coord, place.needsAddress]);
+  }, [place.coord[0], place.coord[1], place.needsAddress]);
 
   const isPoint = place.name === "Point sur la carte" || place.kind === "map";
   const name = isPoint && addr ? addr.name : place.name;

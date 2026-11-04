@@ -40,7 +40,7 @@
 /* ------------------------------------------------------------ puces ------------------------- */
 .search-chips {
   display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 2px 12px 6px;
-  scroll-snap-type: x proximity; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+  scroll-snap-type: x proximity; scroll-padding-inline: 12px; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
 .search-chips::-webkit-scrollbar { display: none; }
@@ -107,7 +107,7 @@
 
 /* ------------------------------------------------------------ panneau du bas ---------------- */
 .search-sheet {
-  position: relative; border-radius: var(--radius-l) var(--radius-l) 0 0; border-bottom: 0;
+  position: relative; z-index: 5; /* au-dessus des contrôles MapLibre (attribution, z-index 2) */ border-radius: var(--radius-l) var(--radius-l) 0 0; border-bottom: 0;
   padding: 0 14px calc(14px + var(--safe-bottom));
   animation: search-sheet-in 240ms var(--ease-drawer);
   transition: transform 240ms var(--ease-drawer);
@@ -135,7 +135,7 @@
 
 .home-tiles {
   display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 10px 2px;
-  scroll-snap-type: x proximity;
+  scroll-snap-type: x proximity; scroll-padding-inline: 10px;
 }
 .home-tiles::-webkit-scrollbar { display: none; }
 .home-tile {

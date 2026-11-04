@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { core, useCore } from "../../core/store";
 import { parseCoords, searchPlaces, norm, type SearchResult } from "./api";
 import { CATEGORIES } from "./categories";
@@ -227,10 +227,10 @@ export function SearchBar() {
               <p>Cherchez une adresse, un commerce, une ville… ou des coordonnées GPS.</p>
             </div>
           )}
-          {!q && rows.some((r) => r.icon === "clock") && <div className="search-section">Récents</div>}
           {rows.map((r, i) => (
+            <Fragment key={r.key}>
+            {!q && r.icon === "clock" && rows[i - 1]?.icon !== "clock" && <div className="search-section">Récents</div>}
             <div
-              key={r.key}
               id={`search-row-${i}`}
               data-i={i}
               role="option"
@@ -256,6 +256,7 @@ export function SearchBar() {
                 </button>
               )}
             </div>
+            </Fragment>
           ))}
           {q.length > 0 && q.length < 3 && !parseCoords(q) && rows.length === 0 && (
             <div className="search-hint">Encore une lettre ou deux…</div>

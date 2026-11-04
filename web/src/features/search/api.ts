@@ -238,7 +238,8 @@ async function searchPhoton(q: string, near: LngLat | null, local: boolean, sign
   }
   const d = await getJson<{ features?: PhotonFeature[] }>(photonUrl(params), signal);
   return (d.features ?? [])
-    .filter((f) => !NOISE.has(f.properties.osm_value ?? ""))
+    // les limites administratives doublonnent les communes (et l'arrondissement « Vichy » est à 20 km de la ville)
+    .filter((f) => !NOISE.has(f.properties.osm_value ?? "") && f.properties.osm_key !== "boundary")
     .map((f, i) => photonToResult(f, i))
     .filter((r): r is SearchResult => !!r);
 }
@@ -278,7 +279,12 @@ export function parseCoords(q: string): LngLat | null {
 function isDup(a: SearchResult, b: SearchResult) {
   const d = distance(a.coord, b.coord);
   if (d < 25) return true;
-  return d < 150 && norm(a.name) === norm(b.name);
+  const same = norm(a.name) === norm(b.name);
+  // une même commune : centre BAN (mairie) et centre OSM peuvent être à quelques km
+  if (same && a.kind === "city" && b.kind === "city") return d < 8000;
+  // une même rue : point BAN (milieu de voie) et tracé OSM peuvent différer de quelques centaines de mètres
+  if (same && a.kind === "street" && b.kind === "street") return d < 800;
+  return d < 150 && same;
 }
 
 export function rank(q: string, list: SearchResult[], near: LngLat | null): SearchResult[] {

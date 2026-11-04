@@ -8,7 +8,11 @@ import { kindIcon } from "./format";
 import { iconSvg as svg } from "./icons";
 
 function marker(map: maplibregl.Map, coord: LngLat, el: HTMLElement, anchor: "center" | "bottom" = "center") {
-  return new maplibregl.Marker({ element: el, anchor }).setLngLat(coord).addTo(map);
+  const label = el.getAttribute("aria-label");
+  const m = new maplibregl.Marker({ element: el, anchor }).setLngLat(coord).addTo(map);
+  // MapLibre remplace l'aria-label par « Map marker » : on remet le nôtre
+  if (label) el.setAttribute("aria-label", label);
+  return m;
 }
 
 /**
@@ -119,9 +123,11 @@ export function MapLayer() {
       const pr = top.properties as Record<string, string | undefined>;
       const name = pr["name:fr"] || pr.name;
       if (!name) return;
-      const [typeLabel, kind] = top.sourceLayer === "place" ? ["Lieu", "city"] : osmLabel(undefined, pr.subclass || pr.class);
+      const isPlace = top.sourceLayer === "place";
+      const [typeLabel, kind] = isPlace ? osmLabel("place", pr.class) : osmLabel(undefined, pr.subclass || pr.class);
       const c = top.geometry.coordinates as LngLat;
-      openPlace({ id: `poi:${top.id ?? c.join(",")}`, name, coord: [c[0], c[1]], kind, typeLabel, from: "map", needsAddress: true });
+      // une ville n'a pas d'adresse : pas de géocodage inverse (il renverrait une rue au hasard du centre)
+      openPlace({ id: `poi:${top.id ?? c.join(",")}`, name, coord: [c[0], c[1]], kind, typeLabel, from: "map", needsAddress: !isPlace });
     };
 
     map.on("touchstart", onTouchStart);
