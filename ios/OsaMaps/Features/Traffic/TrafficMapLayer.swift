@@ -28,6 +28,7 @@ final class TrafficMapController {
     private var renderScheduled = false
     private var tokens: [BusToken] = []
     private var visibleObserved = TrafficStore.shared.visible
+    private var modeObserved = Core.shared.mode
 
     // MARK: - MapLayer
 
@@ -68,9 +69,14 @@ final class TrafficMapController {
     private func observeVisible() {
         withObservationTracking {
             _ = TrafficStore.shared.visible
+            _ = Core.shared.mode
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                if Core.shared.mode != self.modeObserved {
+                    self.modeObserved = Core.shared.mode
+                    self.render() // change de niveau d'overlay
+                }
                 if TrafficStore.shared.visible != self.visibleObserved {
                     self.visibleObserved = TrafficStore.shared.visible
                     self.loaded = nil
@@ -195,8 +201,11 @@ final class TrafficMapController {
             let lines = segs.values.filter { $0.properties.trafficLevel == level }.map { $0.coordinates.map(MKMapPoint.init) }.filter { $0.count >= 2 }
             if !lines.isEmpty { fresh.append(TrafficLinesOverlay(level: level, lines: lines)) }
         }
-        // insérés tout en bas des overlays : l'itinéraire reste par-dessus le trafic ; les libellés aussi
-        for (i, o) in fresh.enumerated() { map.insertOverlay(o, at: i, level: .aboveRoads) }
+        // insérés tout en bas de leur niveau : l'itinéraire reste par-dessus le trafic.
+        // Exploration : sous les libellés. Conduite : le tracé de routing est en .aboveLabels, on y va aussi
+        // (sinon le trafic passerait sous les bâtiments 3D et le tracé).
+        let level: MKOverlayLevel = Core.shared.mode == .drive ? .aboveLabels : .aboveRoads
+        for (i, o) in fresh.enumerated() { map.insertOverlay(o, at: i, level: level) }
         map.removeOverlays(overlays)
         overlays = fresh
         updateEventVisibility()
