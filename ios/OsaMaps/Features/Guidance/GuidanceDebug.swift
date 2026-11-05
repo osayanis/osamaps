@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import CoreLocation
+import UIKit
 
 /// Banc d'essai du guidage SANS le module routing (DEBUG uniquement) :
 ///   osamaps://guidance-test                         Moulins → Vichy, conduite démarrée
@@ -8,7 +9,8 @@ import CoreLocation
 ///   …&limits=8      limites de vitesse ajoutées 8 s après (même id de route : la progression doit rester)
 ///   …&off=20        20 s après le départ, la position est décalée de 250 m (sortie de route → recalcul)
 ///   …&alert=12      12 s après, une alerte police à 800 m (« Police signalée dans 800 m »)
-///   …&settings=5    ouvre les Réglages 5 s après
+///   …&settings=5    ouvre les Réglages 5 s après ; …&alertDist=400 distance de l'alerte de test
+///   …&home=6        6 s après, l'app passe en arrière-plan (Dynamic Island)
 /// Pendant un test, `.routeRecompute` est traité ici (nouveau calcul depuis la position) comme le ferait routing.
 /// Sans lien (iOS 27 : `simctl openurl` demande une confirmation), argument de lancement :
 ///   -guidanceTest YES   ou   -guidanceTest "to=46.13,3.43&limits=8&alert=12"
@@ -80,9 +82,12 @@ enum GuidanceDebug {
                 }
                 after(q["off"]) { if testing { offset = 250 } }
                 after(q["alert"]) {
-                    emit(.driveAlert(DriveAlert(id: "test-police", kind: "police", text: "Police signalée dans 800 m", distance: 800, tone: .police)))
+                    let d = Double(q["alertDist"] ?? "") ?? 800
+                    emit(.driveAlert(DriveAlert(id: "test-police", kind: "police", text: "Police signalée dans \(Int(d)) m", distance: d, tone: .police)))
                 }
                 after(q["settings"]) { core.settingsOpen = true }
+                // passe l'app en arrière-plan (écran d'accueil) pour voir la Live Activity dans la Dynamic Island
+                after(q["home"]) { UIControl().sendAction(#selector(URLSessionTask.suspend), to: UIApplication.shared, for: nil) }
             } catch {
                 emit(.toast(Toast(text: "Test guidage : \(error.localizedDescription)", tone: .warn)))
             }
@@ -99,7 +104,7 @@ enum GuidanceDebug {
     }
 
     private static func reroute(from: CLLocationCoordinate2D, to: Place) async {
-        try? await Task.sleep(for: .seconds(1.5))
+        try? await Task.sleep(for: .seconds(4))
         guard let route = try? await fetchRoute([from, to.coordinate], id: "test-\(Int(Date().timeIntervalSince1970))") else { return }
         Core.shared.routes = [route]
         Core.shared.activeRoute = 0
