@@ -51,7 +51,42 @@ enum SearchBoot {
         lastMode = Core.shared.mode
         observeMode()
         _ = s
+        #if DEBUG
+        debugHooks()
+        #endif
     }
+
+    #if DEBUG
+    /// Tests dans le Simulateur (iOS 27 demande une confirmation à chaque `simctl openurl`) :
+    ///   -searchTestSeed YES                           → lieux d'exemple (maison, travail, favoris, récents)
+    ///   -searchTestURL "osamaps://autour/bakery|osamaps://lieu?…"  → liens rejoués au démarrage (2,5 s d'écart)
+    private static func debugHooks() {
+        let d = UserDefaults.standard
+        if d.bool(forKey: "searchTestSeed") {
+            let s = SearchState.shared
+            s.setShortcut(.home, SearchSaved(id: "h", name: "8 Rue de Paris", detail: "03000 Moulins",
+                                             coordinate: .init(latitude: 46.567452, longitude: 3.331425)))
+            s.setShortcut(.work, SearchSaved(id: "w", name: "Avenue des Isles", detail: "03000 Avermes",
+                                             coordinate: .init(latitude: 46.5838, longitude: 3.3125)))
+            s.favorites = [SearchSaved(id: "fav:1", name: "Vichy", detail: "03200 · Allier",
+                                       coordinate: .init(latitude: 46.1278, longitude: 3.4258), kind: "city")]
+            s.recents = [
+                SearchSaved(id: "r1", name: "Céréa", detail: "8 Rue d'Allier, 03000 Moulins",
+                            coordinate: .init(latitude: 46.5651, longitude: 3.3347), kind: "bakery", time: .now.addingTimeInterval(-3600)),
+                SearchSaved(id: "r2", name: "Gare de Moulins", detail: "Place de la Gare, 03000 Moulins",
+                            coordinate: .init(latitude: 46.5606, longitude: 3.3410), kind: "train", time: .now.addingTimeInterval(-90_000)),
+            ]
+        }
+        guard let raw = d.string(forKey: "searchTestURL") else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            for part in raw.split(separator: "|") {
+                if let u = URL(string: String(part)) { Links.handle(u) }
+                try? await Task.sleep(for: .seconds(2.5))
+            }
+        }
+    }
+    #endif
 
     /// Toute destination choisie (par n'importe quel module) rejoint les récents.
     private static func remember(_ p: Place) {

@@ -62,7 +62,8 @@ struct SearchHomeSheet: View {
                     SearchBadge(symbol: s.symbol, size: 42, prominent: true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(s.title).font(.osa(16, .bold)).foregroundStyle(Osa.text)
-                        Text([SearchFormat.distanceLabel(pos, s.place.coordinate), s.place.detail ?? s.place.name]
+                        Text([SearchFormat.distanceLabel(pos, s.place.coordinate),
+                              s.place.kind == "car" ? (s.place.detail ?? s.place.name) : s.place.name]
                             .compactMap { $0 }.joined(separator: " · "))
                             .font(.osa(13, .medium)).foregroundStyle(Osa.dim).lineLimit(1)
                     }

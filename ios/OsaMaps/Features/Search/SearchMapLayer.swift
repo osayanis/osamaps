@@ -280,7 +280,9 @@ enum SearchMarkers {
                 UIColor.white.setFill()
                 path.fill()
                 g.setShadow(offset: .zero, blur: 0)
-                if let img = symbolImage(symbol, size: 17, color: .black) {
+                // un point sans type : un simple rond noir (une épingle dans l'épingle serait redondante)
+                let glyph = symbol == "mappin" ? "circle.fill" : symbol
+                if let img = symbolImage(glyph, size: symbol == "mappin" ? 11 : 17, color: .black) {
                     img.draw(at: CGPoint(x: circle.midX - img.size.width / 2, y: circle.midY - img.size.height / 2))
                 }
             }

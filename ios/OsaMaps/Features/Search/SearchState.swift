@@ -308,8 +308,9 @@ final class SearchState {
         let minSize = 1200 * MKMapPointsPerMeterAtLatitude(center.latitude)
         if rect.size.width < minSize { rect = rect.insetBy(dx: -(minSize - rect.size.width) / 2, dy: 0) }
         if rect.size.height < minSize { rect = rect.insetBy(dx: 0, dy: -(minSize - rect.size.height) / 2) }
-        let bottom = max(core.sheetHeight, 320) + 24
-        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 150, left: 40, bottom: bottom, right: 50), animated: true)
+        // le panneau grandit quand la liste arrive : on prévoit sa hauteur finale ; en haut, barre + puces
+        let bottom = max(core.sheetHeight, 420) + 24
+        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 190, left: 40, bottom: bottom, right: 60), animated: true)
     }
 
     static func rect(_ r: MKCoordinateRegion) -> MKMapRect {

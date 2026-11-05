@@ -193,8 +193,8 @@ private struct SearchOverlayContent: View {
                 out.append(SearchOverlayRow(id: "map", symbol: "hand.tap.fill", title: "Choisir sur la carte",
                                             subtitle: "Appui long à l'endroit voulu") { search.pickFromMap() })
             } else {
-                if let h = search.home { out.append(saved(h, "house.fill", title: "Maison", sub: h.detail ?? h.name, direct: true, prefix: "hom")) }
-                if let w = search.work { out.append(saved(w, "briefcase.fill", title: "Travail", sub: w.detail ?? w.name, direct: true, prefix: "wrk")) }
+                if let h = search.home { out.append(saved(h, "house.fill", title: "Maison", sub: [h.name, h.detail].compactMap { $0 }.joined(separator: ", "), direct: true, prefix: "hom")) }
+                if let w = search.work { out.append(saved(w, "briefcase.fill", title: "Travail", sub: [w.name, w.detail].compactMap { $0 }.joined(separator: ", "), direct: true, prefix: "wrk")) }
                 for (i, f) in search.favorites.prefix(4).enumerated() {
                     out.append(saved(f, "star.fill", section: i == 0 ? "Favoris" : nil, prefix: "fav"))
                 }
@@ -225,10 +225,10 @@ private struct SearchOverlayContent: View {
         // lieux enregistrés qui correspondent (en tête, comme « Maison » quand on tape « mai »)
         var local: [SearchOverlayRow] = []
         if let h = search.home, SearchText.loose(q, "maison") || SearchText.loose(q, h.name) {
-            local.append(saved(h, "house.fill", title: "Maison", sub: h.detail ?? h.name, direct: picking == nil, prefix: "hom"))
+            local.append(saved(h, "house.fill", title: "Maison", sub: [h.name, h.detail].compactMap { $0 }.joined(separator: ", "), direct: picking == nil, prefix: "hom"))
         }
         if let w = search.work, SearchText.loose(q, "travail") || SearchText.loose(q, w.name) {
-            local.append(saved(w, "briefcase.fill", title: "Travail", sub: w.detail ?? w.name, direct: picking == nil, prefix: "wrk"))
+            local.append(saved(w, "briefcase.fill", title: "Travail", sub: [w.name, w.detail].compactMap { $0 }.joined(separator: ", "), direct: picking == nil, prefix: "wrk"))
         }
         for f in search.favorites where SearchText.loose(q, f.name) || SearchText.loose(q, f.detail ?? "") {
             local.append(saved(f, "star.fill", prefix: "fav"))
