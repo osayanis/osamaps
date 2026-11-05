@@ -88,18 +88,29 @@ private struct AlongActions: View {
     var ref: AlongStationRef
     var mode: Mode
     var body: some View {
-        HStack(spacing: 10) {
-            Button { AlongModel.shared.go(ref) } label: {
-                Label("Y aller", systemImage: "arrow.triangle.turn.up.right.diamond.fill").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.osaPill)
-            if mode != .browse {
-                Button { AlongModel.shared.addStop(ref) } label: {
-                    Label("Ajouter comme arrêt", systemImage: "plus").lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.osaPillSecondary)
+        if mode == .browse {
+            goButton
+        } else {
+            // côte à côte si ça tient, sinon l'un sous l'autre (jamais tronqué)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { goButton; stopButton.fixedSize() }
+                VStack(spacing: 8) { goButton; stopButton }
             }
         }
+    }
+
+    private var goButton: some View {
+        Button { AlongModel.shared.go(ref) } label: {
+            Label("Y aller", systemImage: "arrow.triangle.turn.up.right.diamond.fill").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.osaPill)
+    }
+
+    private var stopButton: some View {
+        Button { AlongModel.shared.addStop(ref) } label: {
+            Label("Ajouter comme arrêt", systemImage: "plus").lineLimit(1).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.osaPillSecondary)
     }
 }
 
@@ -214,7 +225,7 @@ struct AlongListSheet: View {
             let list = (r?.ev ?? []).filter { ($0.along ?? 0) >= pos }
                 .sorted { ($0.kw, -($0.along ?? 0)) > ($1.kw, -($1.along ?? 0)) }
             AlongPanel(icon: "bolt.fill", title: "Recharge sur le trajet",
-                       detail: loading ? "Recherche des bornes…" : r?.status == .error ? "Bornes indisponibles pour le moment." : "\(list.count) lieu\(list.count > 1 ? "x" : "") à moins de 1,5 km du tracé") {
+                       detail: loading ? "Recherche des bornes…" : r?.status == .error ? "Bornes indisponibles pour le moment." : "\(list.count) lieu\(list.count > 1 ? "x" : "") à moins de 1,5 km") {
                 rows(list.prefix(40).map { s in
                     Row(id: s.id, value: s.kw > 0 ? "\(Int(s.kw)) kW" : "—", best: false, title: s.name,
                         sub: "\(s.operator_) · à \(Geo.formatDistance((s.along ?? 0) - pos))", ref: .ev(s))
@@ -224,7 +235,7 @@ struct AlongListSheet: View {
             let ranked = r.map { AlongFormat.rankOnRoute($0.fuel, energy, fromAlong: pos) } ?? []
             AlongPanel(icon: "fuelpump.fill", title: "Carburant sur le trajet",
                        detail: loading ? "Recherche des stations…" : r?.status == .error ? "Stations indisponibles pour le moment."
-                           : "\(energy.label) · \(ranked.count) station\(ranked.count > 1 ? "s" : "") à moins de 1 km du tracé") {
+                           : "\(energy.label) · \(ranked.count) station\(ranked.count > 1 ? "s" : "") à moins d’1 km") {
                 if !loading, r?.status == .ready, ranked.isEmpty {
                     Text("Aucun prix récent pour ce carburant le long du trajet.").font(.osa(14, .medium)).foregroundStyle(Osa.dim)
                 }

@@ -75,7 +75,10 @@ final class AlongPillView: MKAnnotationView {
         // le centre du point tombe sur la coordonnée
         centerOffset = CGPoint(x: 0, y: -(h / 2 - dotD / 2))
         // MapKit masque les étiquettes qui se chevauchent : les moins chères gagnent
-        displayPriority = MKFeatureDisplayPriority(rawValue: Float(max(10, min(999, 999 - a.rank))))
+        // le tri à l'écran est fait par AlongLayer.declutter (MapKit ne masque pas ces vues de façon fiable) ;
+        // en cas de chevauchement résiduel, la moins chère passe dessus
+        displayPriority = .required
+        zPriority = MKAnnotationViewZPriority(rawValue: Float(max(1, min(999, 999 - a.rank))))
         accessibilityLabel = a.label
         isAccessibilityElement = true
     }
@@ -88,6 +91,28 @@ enum AlongLayer {
     private static var shown: [String: AlongAnnotation] = [:]
     private static var zoomOK = true
     private static weak var map: MKMapView?
+    private static var lastRefresh = Date.distantPast
+    private static let pillFont = UIFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .bold)
+
+    /// Garde, de la plus importante (la moins chère) à la moins importante, les étiquettes qui ne
+    /// recouvrent pas une étiquette déjà gardée ; celles hors de l'écran attendent le prochain mouvement.
+    private static func declutter(_ all: [String: AlongAnnotation], in map: MKMapView) -> [String: AlongAnnotation] {
+        let area = map.bounds.insetBy(dx: -120, dy: -120)
+        var kept: [CGRect] = []
+        var out: [String: AlongAnnotation] = [:]
+        for a in all.values.sorted(by: { ($0.rank, $0.key) < ($1.rank, $1.key) }) {
+            let p = map.convert(a.coordinate, toPointTo: map)
+            guard p.x.isFinite, p.y.isFinite, area.contains(p) else { continue }
+            let w = ceil((a.label as NSString).size(withAttributes: [.font: pillFont]).width) + 16
+            // pilule (24) + écart (3) au-dessus du point (8) centré sur la coordonnée
+            let r = CGRect(x: p.x - w / 2, y: p.y - 31, width: w, height: 35).insetBy(dx: -3, dy: -2)
+            if kept.contains(where: { $0.intersects(r) }) { continue }
+            kept.append(r)
+            out[a.key] = a
+            if out.count >= 150 { break }
+        }
+        return out
+    }
 
     /// En exploration, on n'affiche les prix qu'à partir d'un zoom de quartier (~ zoom 11).
     static func zoomedIn(_ r: MKCoordinateRegion) -> Bool { r.span.longitudeDelta <= 0.3 }
@@ -126,8 +151,9 @@ enum AlongLayer {
             Core.shared.openPanel("along.station", data: a.ref)
             return true
         }, regionDidChange: { map in
-            let ok = zoomedIn(map.region)
-            if ok != zoomOK { zoomOK = ok; refresh() }
+            zoomOK = zoomedIn(map.region)
+            // en conduite la caméra bouge sans cesse : au plus 2 recalculs par seconde
+            if Core.shared.mode != .drive || Date.now.timeIntervalSince(lastRefresh) > 0.5 { refresh() }
             if Core.shared.mode == .browse { AlongModel.shared.loadNearby(map) }
         })
     }
@@ -135,7 +161,8 @@ enum AlongLayer {
     /// Recalcule les annotations voulues et ne touche qu'à celles qui changent (pas de clignotement).
     static func refresh() {
         guard let map else { return }
-        let want = desired()
+        lastRefresh = .now
+        let want = declutter(desired(), in: map)
         var remove: [AlongAnnotation] = []
         for (k, a) in shown {
             if let w = want[k], w.label == a.label, w.style == a.style, w.ref == a.ref { continue }

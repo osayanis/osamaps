@@ -12,6 +12,34 @@ enum AlongDebug {
     private static var token: BusToken?
 
     static func start() {
+        // Arguments de lancement (le simulateur iOS 27 bloque `simctl openurl` derrière une alerte) :
+        //   -alongTest YES            itinéraire de test vers Vichy, en aperçu
+        //   -alongOpen fuel|weather|station|settings   panneau ouvert ensuite
+        //   -alongDrive YES           démarre ensuite la conduite
+        let d = UserDefaults.standard
+        if d.bool(forKey: "alongTest") {
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await injectRoute([:])
+                try? await Task.sleep(for: .seconds(4))
+                switch d.string(forKey: "alongOpen") ?? "" {
+                case "fuel": Core.shared.openPanel("along.fuel")
+                case "weather": Core.shared.openPanel("along.weather")
+                case "station": openCheapest()
+                case "settings": Core.shared.settingsOpen = true
+                default: break
+                }
+                if d.bool(forKey: "alongDrive"), let r = Core.shared.route {
+                    Core.shared.mode = .drive
+                    Core.shared.follow = true
+                    emit(.driveStart(routeId: r.id))
+                }
+            }
+        } else if d.string(forKey: "alongOpen") == "settings" {
+            Task { try? await Task.sleep(for: .seconds(3)); Core.shared.settingsOpen = true }
+        } else if d.string(forKey: "alongOpen") == "station" {
+            Task { try? await Task.sleep(for: .seconds(6)); openCheapest() }
+        }
         token = Bus.shared.on { e in
             guard case let .custom(name, payload) = e, name == "url",
                   let s = payload["url"], let url = URL(string: s) else { return }
