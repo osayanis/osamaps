@@ -1,6 +1,7 @@
 #if DEBUG
 import SwiftUI
 import CoreLocation
+import MapKit
 import Observation
 
 /// Outils de test (DEBUG uniquement), pour vérifier le module sans le module routing :
@@ -10,7 +11,11 @@ import Observation
 ///   osamaps://safety-test?night=1        simule 31 min de conduite à 2 h → rappel de fatigue
 ///   osamaps://safety-test?passenger=1    demande « Tu es passager ? » par le Bus (contrat public)
 ///   osamaps://safety-test?critair=V4     règle la vignette
+///   osamaps://safety-test?settings=1     ouvre les Réglages
+///   osamaps://safety-test?center=46.43,3.36   centre la carte (disques de zones en exploration)
 ///
+/// Même chose sans lien (le Simulateur demande « Ouvrir dans OsaMaps ? ») : argument de lancement
+/// `-safetyTest "to=46.1278,3.4258&from=…"` (exécuté 2 s après le démarrage).
 /// Argument de lancement `-safetyDebug YES` : petit panneau avec l'état du moteur et les dernières alertes.
 @MainActor
 @Observable
@@ -35,6 +40,12 @@ final class SafetyDebug {
             default: break
             }
         }
+        if let q = UserDefaults.standard.string(forKey: "safetyTest"), let u = URL(string: "osamaps://safety-test?" + q) {
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                shared.handle(u)
+            }
+        }
     }
 
     private func handle(_ url: URL) {
@@ -42,11 +53,22 @@ final class SafetyDebug {
                            uniquingKeysWith: { a, _ in a })
         if let c = q["critair"], let v = SafetyCritAir(rawValue: c) { SafetySettings.shared.critair = v }
         if q["night"] != nil { SafetyEngine.shared.debugNight() }
-        if q["passenger"] != nil { emit(.custom(name: "safety:passenger-check", payload: ["token": "debug"])) }
-        guard let to = Self.coord(q["to"]) else { return }
+        if q["settings"] != nil { Core.shared.settingsOpen = true }
+        if let c = Self.coord(q["center"]), let map = Core.shared.map {
+            Core.shared.follow = false
+            map.setRegion(MKCoordinateRegion(center: c, latitudinalMeters: 9000, longitudinalMeters: 9000), animated: false)
+        }
+        let to = Self.coord(q["to"])
         let from = Self.coord(q["from"]) ?? Core.shared.position?.coordinate ?? Location.defaultCenter
         let mode = q["mode"] == "preview" ? Mode.preview : .drive
-        Task { await route(from: from, to: to, mode: mode) }
+        Task {
+            if let to { await route(from: from, to: to, mode: mode) }
+            // « Tu es passager ? » par le contrat public du Bus (il faut rouler : on laisse le simulateur accélérer)
+            if q["passenger"] != nil {
+                if to != nil { try? await Task.sleep(for: .seconds(3)) }
+                emit(.custom(name: "safety:passenger-check", payload: ["token": "debug"]))
+            }
+        }
     }
 
     private static func coord(_ s: String?) -> CLLocationCoordinate2D? {
