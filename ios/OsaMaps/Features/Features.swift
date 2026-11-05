@@ -8,4 +8,5 @@ let allFeatures: [Feature] = [
     safetyFeature,
     mascotFeature,
     trafficFeature,
+    reportsFeature,
 ]
