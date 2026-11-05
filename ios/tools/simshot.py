@@ -18,9 +18,12 @@ rt = ios[-1]
 devs = json.loads(sh("xcrun", "simctl", "list", "devices", "-j"))["devices"].get(rt["identifier"], [])
 dev = next((d for d in devs if d["name"] == "OsaMaps-Test"), None)
 if not dev:
-    types = [t for t in rt.get("supportedDeviceTypes", []) if re.match(r"iPhone \d+ Pro$", t["name"])] or \
-            [t for t in rt.get("supportedDeviceTypes", []) if t["name"].startswith("iPhone")]
-    udid = sh("xcrun", "simctl", "create", "OsaMaps-Test", types[-1]["identifier"], rt["identifier"]).strip()
+    names = [t["name"] for t in rt.get("supportedDeviceTypes", [])]
+    # un iPhone classique (un seul écran) : 18 Pro, sinon 17 Pro, sinon 16 Pro
+    pick = next((n for n in ("iPhone 18 Pro", "iPhone 17 Pro", "iPhone 16 Pro") if n in names), None) \
+        or next((n for n in names if re.match(r"iPhone \d+$", n)), None) or next(n for n in names if n.startswith("iPhone"))
+    tid = next(t["identifier"] for t in rt["supportedDeviceTypes"] if t["name"] == pick)
+    udid = sh("xcrun", "simctl", "create", "OsaMaps-Test", tid, rt["identifier"]).strip()
 else:
     udid = dev["udid"]
 sh("xcrun", "simctl", "boot", udid, check=False)
@@ -36,7 +39,10 @@ for kind, v in steps:
     if kind == "url": sh("xcrun", "simctl", "openurl", udid, v); time.sleep(1.5)
     else: time.sleep(v)
 time.sleep(wait)
-sh("xcrun", "simctl", "io", udid, "screenshot", "--type=png", out)
+# certains modèles ont plusieurs écrans : on capture l'écran principal
+r = subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", "--type=png", out], capture_output=True, text=True)
+if r.returncode != 0:
+    sh("xcrun", "simctl", "io", udid, "screenshot", "--type=png", "--display=1", out)
 logs = sh("xcrun", "simctl", "spawn", udid, "log", "show", "--last", "2m", "--style", "compact", "--predicate", 'process == "OsaMaps" AND (messageType == error OR eventMessage CONTAINS "OsaMaps")', check=False, timeout=60)
 print("capture :", out)
 print("\n".join(logs.strip().splitlines()[-15:]))
