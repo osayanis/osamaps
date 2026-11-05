@@ -23,6 +23,10 @@ final class Prefs {
     var contributeTraffic: Bool { didSet { d.set(contributeTraffic, forKey: "prefs.contributeTraffic") } }
     /// L'écran d'accueil a été vu.
     var onboarded: Bool { didSet { d.set(onboarded, forKey: "prefs.onboarded") } }
+    /// Profil du véhicule (voiture, camion, poids lourd, super lourd + dimensions) : voir Vehicle.swift.
+    var vehicle: Vehicle { didSet { d.set(try? JSONEncoder().encode(vehicle), forKey: "prefs.vehicle") } }
+    /// Le véhicule a été choisi (à l'accueil, ou plus tard pour ceux qui avaient déjà passé l'accueil).
+    var vehicleChosen: Bool { didSet { d.set(vehicleChosen, forKey: "prefs.vehicleChosen") } }
 
     private init() {
         d.register(defaults: [
@@ -38,5 +42,9 @@ final class Prefs {
         contributeTraffic = d.bool(forKey: "prefs.contributeTraffic")
         // argument de lancement « -onboarded YES » pour les tests (sauter l'accueil)
         onboarded = d.bool(forKey: "prefs.onboarded") || d.bool(forKey: "onboarded")
+        vehicle = d.data(forKey: "prefs.vehicle").flatMap { try? JSONDecoder().decode(Vehicle.self, from: $0) } ?? Vehicle()
+        // argument de lancement « -vehicle heavy » pour les tests (et considéré comme choisi)
+        if let k = d.string(forKey: "vehicle").flatMap(Vehicle.Kind.init(rawValue:)) { vehicle = .preset(k) }
+        vehicleChosen = d.bool(forKey: "prefs.vehicleChosen") || d.string(forKey: "vehicle") != nil
     }
 }

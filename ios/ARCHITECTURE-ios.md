@@ -25,7 +25,8 @@ ios/
       Location.swift       GPS ou simulateur (-sim 90 -speedup 6), arrière-plan pendant la conduite
       Geometry.swift       Geo : distance, cap, snap au tracé, polyline, formats fr
       Voice.swift          Voice.shared.speak("…") en français (ducking, écran verrouillé)
-      Prefs.swift          préférences partagées (éviter péages, voix, partage, trafic, onboarded…)
+      Prefs.swift          préférences partagées (éviter péages, voix, partage, trafic, onboarded, vehicle…)
+      Vehicle.swift        profil véhicule (voiture / camion / poids lourd / super lourd, dimensions → Valhalla)
       Identity.swift       deviceId, friendCode, nickname ; Store.load/save (JSON, clés préfixées)
       Theme.swift          Osa.* couleurs, .osaPill / .osaRound, .osaCard() / .osaGlass(), Haptic.play
       Links.swift          liens osamaps://go|drive|stop|panel|settings|toast|alert (tests + partages)
