@@ -6,4 +6,5 @@ let allFeatures: [Feature] = [
     routingFeature,
     alongFeature,
     safetyFeature,
+    mascotFeature,
 ]
