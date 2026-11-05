@@ -7,7 +7,11 @@ import CoreLocation
 ///   osamaps://guidance-test?to=46.13,3.43&via=46.34,3.41&name=Vichy   destination / étape
 ///   …&limits=8      limites de vitesse ajoutées 8 s après (même id de route : la progression doit rester)
 ///   …&off=20        20 s après le départ, la position est décalée de 250 m (sortie de route → recalcul)
+///   …&alert=12      12 s après, une alerte police à 800 m (« Police signalée dans 800 m »)
+///   …&settings=5    ouvre les Réglages 5 s après
 /// Pendant un test, `.routeRecompute` est traité ici (nouveau calcul depuis la position) comme le ferait routing.
+/// Sans lien (iOS 27 : `simctl openurl` demande une confirmation), argument de lancement :
+///   -guidanceTest YES   ou   -guidanceTest "to=46.13,3.43&limits=8&alert=12"
 @MainActor
 enum GuidanceDebug {
     /// Décalage (m) appliqué aux positions par le moteur : simule une sortie de route.
@@ -18,6 +22,12 @@ enum GuidanceDebug {
     private static var via: CLLocationCoordinate2D?
 
     static func start() {
+        if let arg = UserDefaults.standard.string(forKey: "guidanceTest"), let url = URL(string: "osamaps://guidance-test?" + (arg == "YES" ? "" : arg)) {
+            Task {
+                try? await Task.sleep(for: .seconds(2.5))
+                run(url)
+            }
+        }
         token = Bus.shared.on { e in
             MainActor.assumeIsolated {
                 switch e {
@@ -63,19 +73,28 @@ enum GuidanceDebug {
                 core.follow = true
                 testing = true
                 emit(.driveStart(routeId: route.id))
-                if let s = Double(q["limits"] ?? "") {
-                    try? await Task.sleep(for: .seconds(s))
+                after(q["limits"]) {
                     if let limits = try? await fetchLimits(route.coords), core.route?.id == route.id {
                         core.routes[core.activeRoute].speedLimits = limits
                     }
                 }
-                if let s = Double(q["off"] ?? "") {
-                    try? await Task.sleep(for: .seconds(s))
-                    if testing { offset = 250 }
+                after(q["off"]) { if testing { offset = 250 } }
+                after(q["alert"]) {
+                    emit(.driveAlert(DriveAlert(id: "test-police", kind: "police", text: "Police signalée dans 800 m", distance: 800, tone: .police)))
                 }
+                after(q["settings"]) { core.settingsOpen = true }
             } catch {
                 emit(.toast(Toast(text: "Test guidage : \(error.localizedDescription)", tone: .warn)))
             }
+        }
+    }
+
+    /// Lance `work` après `seconds` secondes (paramètre du lien), si le paramètre est présent.
+    private static func after(_ seconds: String?, _ work: @escaping @MainActor () async -> Void) {
+        guard let s = Double(seconds ?? "") else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(s))
+            await work()
         }
     }
 
