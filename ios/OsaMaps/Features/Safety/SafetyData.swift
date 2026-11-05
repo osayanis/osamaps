@@ -90,6 +90,27 @@ enum SafetyData {
         return URLSession(configuration: c)
     }()
 
+    /// Toutes les zones de danger de France (≈ 3 300 disques, la liste change ~1×/an) :
+    /// gardées sur le téléphone et redemandées au plus une fois par jour.
+    private struct SavedZones: Codable { var at: Date = .distantPast; var zones: [SafetyZone] = [] }
+    private static var allZonesTask: Task<[SafetyZone], Never>?
+    static func allZones() async -> [SafetyZone] {
+        if let t = allZonesTask { return await t.value }
+        let t = Task<[SafetyZone], Never> {
+            let saved = Store.load("safety.allZones", default: SavedZones())
+            if !saved.zones.isEmpty, Date().timeIntervalSince(saved.at) < 86_400 { return saved.zones }
+            if let r = try? await API.get("safety/zones/all", as: SafetyZonesResponse.self, timeout: 40), r.available, !r.zones.isEmpty {
+                Store.save("safety.allZones", SavedZones(at: Date(), zones: r.zones))
+                return r.zones
+            }
+            return saved.zones // hors ligne : la dernière liste connue
+        }
+        allZonesTask = t
+        let zones = await t.value
+        if zones.isEmpty { allZonesTask = nil } // on réessaiera
+        return zones
+    }
+
     /// bbox = (ouest, sud, est, nord), au plus 14° de côté (le serveur refuse au-delà).
     static func zones(_ b: (w: Double, s: Double, e: Double, n: Double)) async throws -> SafetyZonesResponse {
         let key = [b.w, b.s, b.e, b.n].map { String(format: "%.2f", $0) }.joined(separator: ",")

@@ -269,6 +269,16 @@ export async function register({ route, store, log }) {
     };
   }, { limit: 120 });
 
+  // Toutes les zones de France d'un coup (≈ 3 500 disques, mis à jour ~1×/an) : la carte les affiche
+  // à tous les niveaux de zoom. Mêmes disques décalés que /safety/zones, jamais la position d'un radar.
+  route.get("/safety/zones/all", () => ({
+    available: zones.length > 0,
+    error: zones.length ? null : radarsError || "chargement en cours",
+    source: { name: "Liste des radars fixes en France (ministère de l'Intérieur)", page: RADARS_PAGE, updated: radarsCol.data.resource?.updated ?? null },
+    lengths: ZONE_LENGTH,
+    zones,
+  }), { limit: 20 });
+
   route.get("/safety/zfe", () => {
     const features = activeZfe();
     return {

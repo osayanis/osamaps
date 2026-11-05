@@ -4,11 +4,11 @@ import Observation
 
 /// Calques de la carte (port de `SafetyLayers.tsx`) :
 ///  - périmètres ZFE (trait discret en pointillés), visibles quand la vue couvre moins de ~3° ;
-///  - disques des zones de danger en exploration (vue resserrée) ;
+///  - zones de danger de toute la France, dans tous les modes et à tous les zooms (pastille quand
+///    la zone est trop petite à l'écran, disque sinon) ;
 ///  - portions de l'itinéraire en zone de danger (aperçu et conduite).
-/// Jamais de marqueur ponctuel : on ne montre pas où est l'appareil.
+/// Jamais la position d'un radar : les pastilles (vue large) sont le centre DÉCALÉ d'une zone.
 final class SafetyZfePolygon: MKPolygon {}
-final class SafetyZoneCircle: MKCircle {}
 final class SafetyRouteZoneLine: MKPolyline {}
 
 @MainActor
@@ -18,10 +18,10 @@ final class SafetyMapController {
     private weak var map: MKMapView?
     private var zfeOverlays: [SafetyZfePolygon] = []
     private var zfeShown = false
-    private var zoneOverlays: [SafetyZoneCircle] = []
-    private var zoneKey = ""
+    private var zonesOverlay: SafetyZonesOverlay?
+    private var zonesShown = false
+    private var zonesLoading = false
     private var routeOverlays: [SafetyRouteZoneLine] = []
-    private var zoneTimer: Timer?
     private var zfeLoading = false
 
     private init() {}
@@ -56,12 +56,11 @@ final class SafetyMapController {
         guard let map else { return }
         drawRouteZones(map)
         updateZfe(map)
-        if Core.shared.mode != .browse || !SafetySettings.shared.dangerZones { clearZones(map) } else { scheduleZones(map) }
+        updateZones(map)
     }
 
     private func regionChanged(_ map: MKMapView) {
         updateZfe(map)
-        if Core.shared.mode == .browse && SafetySettings.shared.dangerZones { scheduleZones(map) } else { clearZones(map) }
     }
 
     // MARK: ZFE
@@ -102,40 +101,25 @@ final class SafetyMapController {
         }
     }
 
-    // MARK: Zones de danger (exploration)
+    // MARK: Zones de danger (toute la France)
 
-    private func scheduleZones(_ map: MKMapView) {
-        zoneTimer?.invalidate()
-        zoneTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { _ in
-            Task { @MainActor in SafetyMapController.shared.loadZones() }
+    private func updateZones(_ map: MKMapView) {
+        let want = SafetySettings.shared.dangerZones
+        if want, zonesOverlay == nil {
+            guard !zonesLoading else { return }
+            zonesLoading = true
+            Task {
+                let zones = await SafetyData.allZones()
+                zonesLoading = false
+                guard !zones.isEmpty else { return }
+                zonesOverlay = SafetyZonesOverlay(zones)
+                updateZones(map)
+            }
+            return
         }
-    }
-
-    private func loadZones() {
-        guard let map, Core.shared.mode == .browse, SafetySettings.shared.dangerZones else { return }
-        let r = map.region
-        // vue resserrée seulement (≈ zoom 9 de la version web)
-        guard r.span.latitudeDelta < 1.2 else { clearZones(map); return }
-        let b = (w: r.center.longitude - r.span.longitudeDelta / 2, s: r.center.latitude - r.span.latitudeDelta / 2,
-                 e: r.center.longitude + r.span.longitudeDelta / 2, n: r.center.latitude + r.span.latitudeDelta / 2)
-        Task {
-            guard let res = try? await SafetyData.zones(b), Core.shared.mode == .browse,
-                  SafetySettings.shared.dangerZones else { return }
-            let key = res.zones.map(\.id).sorted().joined(separator: ",")
-            guard key != zoneKey else { return }
-            map.removeOverlays(zoneOverlays)
-            zoneOverlays = res.zones.map { SafetyZoneCircle(center: $0.center, radius: $0.r) }
-            zoneKey = key
-            map.addOverlays(zoneOverlays, level: .aboveRoads)
-        }
-    }
-
-    private func clearZones(_ map: MKMapView) {
-        zoneTimer?.invalidate()
-        guard !zoneOverlays.isEmpty else { return }
-        map.removeOverlays(zoneOverlays)
-        zoneOverlays = []
-        zoneKey = ""
+        guard let o = zonesOverlay else { return }
+        if want && !zonesShown { map.addOverlay(o, level: .aboveRoads); zonesShown = true }
+        else if !want && zonesShown { map.removeOverlay(o); zonesShown = false }
     }
 
     // MARK: Itinéraire
@@ -164,13 +148,8 @@ final class SafetyMapController {
             r.lineWidth = 1.5
             r.lineDashPattern = [6, 4]
             return r
-        case let o as SafetyZoneCircle:
-            let r = MKCircleRenderer(circle: o)
-            r.fillColor = danger.withAlphaComponent(0.07)
-            r.strokeColor = danger.withAlphaComponent(0.55)
-            r.lineWidth = 1.2
-            r.lineDashPattern = [4, 4]
-            return r
+        case let o as SafetyZonesOverlay:
+            return SafetyZonesRenderer(o, color: danger)
         case let o as SafetyRouteZoneLine:
             let r = MKPolylineRenderer(polyline: o)
             r.strokeColor = danger.withAlphaComponent(0.5)
@@ -180,6 +159,72 @@ final class SafetyMapController {
             return r
         default:
             return nil
+        }
+    }
+}
+
+/// Toutes les zones de danger en UN overlay (≈ 3 300 disques) : un MKCircle par zone serait trop lourd.
+/// Données immuables, lues par le rendu sur les fils de MapKit.
+final class SafetyZonesOverlay: NSObject, MKOverlay, @unchecked Sendable {
+    let points: [MKMapPoint]
+    /// Rayons en points de carte (dépendent de la latitude).
+    let radii: [Double]
+    let maxRadius: Double
+    let coordinate = CLLocationCoordinate2D(latitude: 46.6, longitude: 2.4)
+    let boundingMapRect = MKMapRect.world
+
+    init(_ zones: [SafetyZone]) {
+        points = zones.map { MKMapPoint($0.center) }
+        radii = zones.map { $0.r * MKMapPointsPerMeterAtLatitude($0.lat) }
+        maxRadius = radii.max() ?? 0
+    }
+}
+
+final class SafetyZonesRenderer: MKOverlayRenderer, @unchecked Sendable {
+    private let zones: SafetyZonesOverlay
+    private let color: CGColor
+    private let dotFill: CGColor
+    private let diskFill: CGColor
+    private let diskStroke: CGColor
+    private let dotStroke = UIColor.black.withAlphaComponent(0.55).cgColor
+
+    init(_ o: SafetyZonesOverlay, color: UIColor) {
+        zones = o
+        self.color = color.cgColor
+        dotFill = color.withAlphaComponent(0.85).cgColor
+        diskFill = color.withAlphaComponent(0.1).cgColor
+        diskStroke = color.withAlphaComponent(0.75).cgColor
+        super.init(overlay: o)
+    }
+
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
+        let px = 1 / Double(zoomScale) // un point d'écran, en points de carte
+        let dotR = 3.5 * px            // une zone plus petite que ça devient une pastille
+        let pad = max(zones.maxRadius, dotR) + 2 * px
+        let area = mapRect.insetBy(dx: -pad, dy: -pad)
+        var dots: [CGRect] = [], disks: [CGRect] = []
+        for (i, p) in zones.points.enumerated() where area.contains(p) {
+            let r = zones.radii[i]
+            if r < dotR * 2 {
+                dots.append(CGRect(x: p.x - dotR, y: p.y - dotR, width: 2 * dotR, height: 2 * dotR))
+            } else {
+                disks.append(CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
+            }
+        }
+        if !disks.isEmpty {
+            ctx.setFillColor(diskFill)
+            for d in disks { ctx.fillEllipse(in: d) }
+            ctx.setStrokeColor(diskStroke)
+            ctx.setLineWidth(1.5 * px)
+            ctx.setLineDash(phase: 0, lengths: [4 * px, 4 * px])
+            for d in disks { ctx.strokeEllipse(in: d) }
+            ctx.setLineDash(phase: 0, lengths: [])
+        }
+        if !dots.isEmpty {
+            ctx.setFillColor(dotFill)
+            ctx.setStrokeColor(dotStroke)
+            ctx.setLineWidth(1 * px)
+            for d in dots { ctx.fillEllipse(in: d); ctx.strokeEllipse(in: d) }
         }
     }
 }

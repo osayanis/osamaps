@@ -45,6 +45,18 @@ export interface PoiTile { lc: LngLat[]; sc: LngLat[] }
 
 // ------------------------------------------------------------------ appels serveur (avec cache)
 
+/** Toutes les zones de France (≈ 3 300, la liste change ~1×/an) : une seule requête par session. */
+let allZones: Promise<ZonesResponse> | null = null;
+export function fetchAllZones(): Promise<ZonesResponse> {
+  if (!allZones) {
+    allZones = api<ZonesResponse>("safety/zones/all").then(
+      (r) => { if (!r.available) allZones = null; return r; },
+      (e) => { allZones = null; throw e; },
+    );
+  }
+  return allZones;
+}
+
 const zoneCache = new Map<string, Promise<ZonesResponse>>();
 export function fetchZones(bbox: [number, number, number, number]): Promise<ZonesResponse> {
   const key = bbox.map((v) => v.toFixed(2)).join(",");
