@@ -66,22 +66,6 @@ final class ShellState {
             Task { @MainActor in ShellState.shared.readCamera() }
         }
         started = true
-        replayLaunchLink()
-    }
-
-    /// Tests : `-shellLink "osamaps://toast?text=Bonjour"` rejoue un lien au démarrage. Sur iOS 27,
-    /// `simctl openurl` est bloqué par une confirmation système : cet argument passe à côté.
-    /// Plusieurs liens : séparés par « | » (ex. `-shellLink "osamaps://go?…|osamaps://drive"`), 1,5 s d'écart.
-    private func replayLaunchLink() {
-        guard let raw = UserDefaults.standard.string(forKey: "shellLink"), !raw.isEmpty else { return }
-        let urls = raw.split(separator: "|").compactMap { URL(string: String($0)) }
-        Task { @MainActor in
-            for _ in 0..<50 where !Core.shared.mapReady { try? await Task.sleep(for: .milliseconds(100)) }
-            for (i, u) in urls.enumerated() {
-                try? await Task.sleep(for: .milliseconds(i == 0 ? 600 : 1500))
-                Links.handle(u)
-            }
-        }
     }
 
     private func handle(_ e: BusEvent) {
