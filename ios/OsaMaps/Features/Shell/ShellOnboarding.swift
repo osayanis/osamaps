@@ -370,14 +370,17 @@ private struct ShellObPermissions: View {
                     HStack(alignment: .top, spacing: 14) {
                         icon("gauge.with.needle.fill")
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Aider le trafic, anonymement").font(.osa(16, .bold)).foregroundStyle(Osa.text)
+                            // l'interrupteur sur la ligne du titre : le texte garde toute la largeur
+                            HStack(alignment: .center, spacing: 10) {
+                                Text("Aider le trafic, anonymement").font(.osa(16, .bold)).foregroundStyle(Osa.text)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Toggle("Contribuer au trafic", isOn: $prefs.contributeTraffic)
+                                    .labelsHidden().tint(Osa.ok)
+                                    .onChange(of: prefs.contributeTraffic) { _, _ in Haptic.play("light") }
+                            }
                             Text("Ta vitesse est envoyée sans ton pseudo, pour colorer les routes en vert, orange ou rouge pour tout le monde.")
                                 .font(.osa(14, .regular)).foregroundStyle(Osa.dim).fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer(minLength: 0)
-                        Toggle("Contribuer au trafic", isOn: $prefs.contributeTraffic)
-                            .labelsHidden().tint(Osa.ok)
-                            .onChange(of: prefs.contributeTraffic) { _, _ in Haptic.play("light") }
                     }
                     .padding(14)
                     .osaCard()
