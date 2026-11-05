@@ -26,6 +26,8 @@ if not dev:
     udid = sh("xcrun", "simctl", "create", "OsaMaps-Test", tid, rt["identifier"]).strip()
 else:
     udid = dev["udid"]
+# redémarrage à chaque capture : efface toute alerte système restée affichée (ex. « Ouvrir dans OsaMaps ? »)
+sh("xcrun", "simctl", "shutdown", udid, check=False, timeout=120)
 sh("xcrun", "simctl", "boot", udid, check=False)
 sh("xcrun", "simctl", "bootstatus", udid, "-b", timeout=300)
 sh("xcrun", "simctl", "status_bar", udid, "override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "100", check=False)
