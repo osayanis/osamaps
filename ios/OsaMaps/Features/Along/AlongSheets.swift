@@ -135,8 +135,9 @@ struct AlongStationSheet: View {
         let info = alongRouteInfo(along: s.along, offset: s.offset, coord: s.coordinate, mode: core.mode, showOffset: true)
         let fuels = AlongEnergy.fuels.filter { s.price($0) != nil || s.isShort($0) }
         return AlongPanel(icon: "fuelpump.fill", kicker: s.highway ? "Station d'autoroute" : "Station-service", title: s.name, detail: sub) {
-            HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
                 Circle().fill(open.open == true ? Osa.ok : open.open == false ? Osa.jam : Osa.faint).frame(width: 7, height: 7)
+                    .padding(.top, 6)
                 Text([open.text, info].compactMap { $0 }.joined(separator: " · "))
                     .font(.osa(13, .medium)).foregroundStyle(Osa.dim).lineLimit(2)
             }
