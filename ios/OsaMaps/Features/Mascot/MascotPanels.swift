@@ -144,8 +144,10 @@ struct MascotTripSummary: View {
                     .font(.osa(13, .semibold)).foregroundStyle(Osa.dim).monospacedDigit()
             }
             HStack(spacing: 10) {
-                Button("Mon profil") { core.openPanel("profile") }.buttonStyle(.osaPillSecondary).frame(maxWidth: .infinity)
-                Button("Fermer") { core.openPanel(nil) }.buttonStyle(.osaPill).frame(maxWidth: .infinity)
+                Button { core.openPanel("profile") } label: { Text("Mon profil").lineLimit(1).frame(maxWidth: .infinity) }
+                    .buttonStyle(.osaPillSecondary)
+                Button { core.openPanel(nil) } label: { Text("Fermer").lineLimit(1).frame(maxWidth: .infinity) }
+                    .buttonStyle(.osaPill)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -251,7 +253,7 @@ struct MascotProfile: View {
                 .padding(.bottom, 4)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(maxHeight: 330)
+            .frame(maxHeight: Self.scrollMax)
         }
         .mascotSheet()
         .accessibilityElement(children: .contain)
@@ -259,6 +261,12 @@ struct MascotProfile: View {
         .task(id: m.settings.leaderboard) {
             board = m.settings.leaderboard ? await MascotBoard.sync() : nil
         }
+    }
+
+    /// Hauteur max de la zone qui défile : le profil ne doit pas couvrir toute la carte (petits écrans compris).
+    private static var scrollMax: CGFloat {
+        let h = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800
+        return max(170, min(330, h * 0.5 - 250))
     }
 
     static func km(_ m: Double) -> String {

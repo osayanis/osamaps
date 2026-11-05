@@ -411,6 +411,29 @@ final class MascotEngine {
             }
         }
         observeMode()
+        runLaunchScript()
+    }
+
+    /// Tests dans le Simulateur sans dépendre des liens : argument de lancement
+    /// `-mascotTest "reset;points=800;wear=casquette;wait=2;profile"` (étapes séparées par « ; »).
+    private func runLaunchScript() {
+        guard let script = UserDefaults.standard.string(forKey: "mascotTest"), !script.isEmpty else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            for step in script.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) }) {
+                let parts = step.split(separator: "=", maxSplits: 1).map(String.init)
+                let cmd = parts[0], arg = parts.count > 1 ? parts[1] : ""
+                switch cmd {
+                case "wait": try? await Task.sleep(for: .seconds(Double(arg) ?? 1))
+                case "profile": Core.shared.openPanel("profile")
+                case "settings": Core.shared.settingsOpen = true
+                case "points": handleTestLink("osamaps://mascot/points?n=\(arg)")
+                case "wear": handleTestLink("osamaps://mascot/wear?id=\(arg)")
+                case "demo-trip": handleTestLink("osamaps://mascot/demo-trip?name=\(arg.isEmpty ? "Vichy" : arg)")
+                default: handleTestLink("osamaps://mascot/\(cmd)")
+                }
+            }
+        }
     }
 
     private func handle(_ e: BusEvent) {
