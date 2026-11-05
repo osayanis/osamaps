@@ -5,6 +5,7 @@ import Foundation
 ///   Socket.shared.emit("reports:watch", ["tiles": […]])
 ///   Socket.shared.emit("friends:add", ["code": "123456"]) { reply in … }   // avec accusé (ack)
 ///   Socket.shared.onConnect { … }   // appelé à chaque (re)connexion : renvoie tes « hello »/« watch »
+///   Socket.shared.onDisconnect { … }   // appelé à chaque coupure (avant la reconnexion automatique)
 /// Se connecte au premier usage, se reconnecte tout seul (délai croissant).
 @MainActor
 final class Socket {
@@ -14,6 +15,7 @@ final class Socket {
     private var task: URLSessionWebSocketTask?
     private var handlers: [String: [UUID: ([Any]) -> Void]] = [:]
     private var connectHandlers: [UUID: () -> Void] = [:]
+    private var disconnectHandlers: [UUID: () -> Void] = [:]
     private var acks: [Int: ([Any]) -> Void] = [:]
     private var nextAck = 0
     private var retry = 0
@@ -50,6 +52,13 @@ final class Socket {
         connectHandlers[id] = handler
         if connected { handler() }
         return BusToken { [weak self] in self?.connectHandlers[id] = nil }
+    }
+
+    @discardableResult
+    func onDisconnect(_ handler: @escaping () -> Void) -> BusToken {
+        let id = UUID()
+        disconnectHandlers[id] = handler
+        return BusToken { [weak self] in self?.disconnectHandlers[id] = nil }
     }
 
     /// Émet un évènement. `data` : tout objet JSON (dictionnaire, tableau, chaîne, nombre) ou nil.
@@ -101,7 +110,9 @@ final class Socket {
     }
 
     private func dropped() {
+        let was = connected
         connected = false
+        if was { for h in Array(disconnectHandlers.values) { h() } }
         task = nil
         retry += 1
         let delay = min(30.0, pow(1.6, Double(retry)))
@@ -133,7 +144,6 @@ final class Socket {
             for h in Array(connectHandlers.values) { h() }
             for p in queued { send(p) }
         case "1": // déconnecté par le serveur
-            connected = false
             dropped()
         case "2", "3":
             let digits = rest.prefix(while: \.isNumber)
