@@ -8,19 +8,24 @@ import Foundation
 ///    à deux chaussées séparées par un terre-plein central) ; 80 km/h autres routes (abaissée à 60 km/h pour les
 ///    véhicules articulés ou avec remorque > 12 t) ; 50 km/h en agglomération (70 sur le périphérique parisien).
 ///  R413-9 (matières dangereuses > 12 t, et transports exceptionnels R433-1) :
-///    80 km/h autoroute ; 60 km/h autres routes (70 sur routes prioritaires pour certains véhicules agréés) ;
-///    50 km/h en agglomération.
+///    80 km/h autoroute ; 60 km/h autres routes (70 sur routes prioritaires pour certains véhicules agréés :
+///    arrêté non identifié, on garde 60) ; 50 km/h en agglomération.
+///  Transports exceptionnels, arrêté du 4 mai 2006 (art. 3 catégories, art. 14 vitesses) :
+///    1re cat. (≤ 20 m, ≤ 3 m, ≤ 48 t) : R413-9 ; 2e (≤ 25 m, ≤ 4 m, ≤ 72 t) : R413-9 mais 40 en agglomération ;
+///    3e (au-delà) : 60 autoroute, 50 route, 30 agglomération. L'autorisation préfectorale prime toujours.
 ///  La limite affichée = la plus basse entre la limite de la route (OSM, voitures), la limite poids lourds
 ///  explicite (maxspeed:hgv) et le plafond de la catégorie ci-dessus.
 ///  Approximation (Valhalla ne dit pas si une route est « à caractère prioritaire » ni si elle est en
 ///  agglomération) : trunk / primary / secondary = route prioritaire, les autres = « autres routes » ;
 ///  l'agglomération est déjà portée par la limite OSM (≤ 50).
 ///
-/// Interdictions de circuler (véhicules de transport de marchandises > 7,5 t de PTAC, arrêté du 16 avril 2021 +
-/// arrêté du 26 décembre 2025 pour le calendrier 2026, brochure Bison Futé « Calendrier 2026 ») :
+/// Interdictions de circuler (véhicules de transport de marchandises > 7,5 t de PTAC) — arrêté du 16 avril 2021
+/// (art. 1 et 2) + arrêté du 26 décembre 2025 (calendrier 2026, JO du 08/01/2026) :
 ///  samedis et veilles de fêtes 22 h → 24 h ; dimanches et jours fériés 0 h → 22 h ; samedi férié ou dimanche veille
-///  de fête : toute la journée ; + samedis d'été (2026 : 11, 18, 25 juillet, 1er et 8 août, 7 h → 19 h) ;
-///  + hiver en Auvergne-Rhône-Alpes sur certains axes alpins (2026 : 7, 14, 21, 28 février, 7 mars, 7 h → 18 h).
+///  de fête : toute la journée ;
+///  samedis d'été (2026 : 11, 18, 25 juillet, 1er et 8 août) : 7 h → 19 h, qui REMPLACE le 22 h → 24 h ;
+///  hiver en Auvergne-Rhône-Alpes, certains axes alpins (2026 : 7, 14, 21, 28 février, 7 mars) : 7 h → 18 h + 22 h → 24 h.
+///  Non géré : le régime propre aux autoroutes d'Île-de-France (art. 3), les jours fériés locaux d'Alsace-Moselle.
 enum RoutingTruck {
 
     // MARK: Vitesses
@@ -30,9 +35,16 @@ enum RoutingTruck {
     static func topSpeed(_ v: Vehicle) -> Int {
         switch v.kind {
         case .car: 130
-        case .superheavy: 80
+        case .superheavy: convoyCategory(v) == 3 ? 60 : 80
         case .truck, .heavy: v.hazmat && v.weight > 12 ? 80 : 90
         }
+    }
+
+    /// Catégorie de transport exceptionnel (arrêté du 4 mai 2006, art. 3) : la caractéristique la plus forte classe.
+    static func convoyCategory(_ v: Vehicle) -> Int {
+        if v.length > 25 || v.width > 4 || v.weight > 72 { return 3 }
+        if v.length > 20 || v.width > 3 || v.weight > 48 { return 2 }
+        return 1
     }
 
     enum RoadCategory { case motorway, divided, priority, other }
@@ -55,10 +67,13 @@ enum RoutingTruck {
     /// Plafond réglementaire du véhicule pour une catégorie de route (km/h), nil pour une voiture.
     static func cap(_ v: Vehicle, _ c: RoadCategory) -> Int? {
         guard v.isTruck else { return nil }
-        // R413-9 : matières dangereuses > 12 t et transports exceptionnels
-        if v.kind == .superheavy || (v.hazmat && v.weight > 12) {
+        // transports exceptionnels : arrêté du 4 mai 2006, art. 14 (3e catégorie plus lente)
+        if v.kind == .superheavy {
+            if convoyCategory(v) == 3 { return c == .motorway ? 60 : 50 }
             return c == .motorway ? 80 : 60
         }
+        // R413-9 : matières dangereuses > 12 t
+        if v.hazmat && v.weight > 12 { return c == .motorway ? 80 : 60 }
         // R413-8
         let light = v.weight <= 12
         switch c {
@@ -78,6 +93,10 @@ enum RoutingTruck {
         // limite inconnue : on n'invente rien, sauf sur autoroute où le plafond PL s'applique toujours
         guard out != nil || c == .motorway else { return nil }
         if let cap = cap(v, c) { out = min(out ?? cap, cap) }
+        // agglomération (limite ≤ 50) : convois de 2e catégorie à 40, de 3e à 30
+        if v.kind == .superheavy, let o = out, o <= 50, convoyCategory(v) >= 2 {
+            out = min(o, convoyCategory(v) == 3 ? 30 : 40)
+        }
         return out
     }
 
@@ -150,7 +169,11 @@ enum RoutingTruck {
         }
         let comps = c.dateComponents([.year, .month, .day], from: day)
         if let y = comps.year, let m = comps.month, let d = comps.day {
-            if summerSaturdays[y]?.contains(where: { $0.0 == m && $0.1 == d }) == true { out.append((7, 19, nil)) }
+            // samedi d'été (non férié) : 7 h → 19 h remplace le 22 h → 24 h (art. 2), circulation libre après 19 h
+            if summerSaturdays[y]?.contains(where: { $0.0 == m && $0.1 == d }) == true, !hol {
+                out.removeAll { $0.0 == 22 && $0.1 == 24 && !nextHol }
+                out.append((7, 19, nil))
+            }
             if winterAURA[y]?.contains(where: { $0.0 == m && $0.1 == d }) == true {
                 out.append((7, 18, "certains axes alpins d'Auvergne-Rhône-Alpes"))
             }
