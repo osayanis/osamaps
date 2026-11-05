@@ -26,6 +26,8 @@ if not dev:
     udid = sh("xcrun", "simctl", "create", "OsaMaps-Test", tid, rt["identifier"]).strip()
 else:
     udid = dev["udid"]
+# redémarrage à chaque capture : efface toute alerte système restée affichée (ex. « Ouvrir dans OsaMaps ? »)
+sh("xcrun", "simctl", "shutdown", udid, check=False, timeout=120)
 sh("xcrun", "simctl", "boot", udid, check=False)
 sh("xcrun", "simctl", "bootstatus", udid, "-b", timeout=300)
 sh("xcrun", "simctl", "status_bar", udid, "override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "100", check=False)
@@ -33,10 +35,19 @@ sh("xcrun", "simctl", "location", udid, "set", "46.5646,3.3332", check=False)
 bid = "fr.osalabs.osamaps"
 sh("xcrun", "simctl", "terminate", udid, bid, check=False)
 sh("xcrun", "simctl", "install", udid, app)
+# iOS 27 : `simctl openurl` affiche une alerte « Ouvrir dans OsaMaps ? » et le lien n'arrive pas.
+# Les liens passent donc par un fichier du conteneur de l'app, lu par Links (simulateur uniquement).
+import os
+inbox = os.path.join(sh("xcrun", "simctl", "get_app_container", udid, bid, "data").strip(), "Documents")
+os.makedirs(inbox, exist_ok=True)
+inbox = os.path.join(inbox, "osamaps-links.txt")
+if os.path.exists(inbox): os.remove(inbox)
 sh("xcrun", "simctl", "launch", udid, bid, *args)
 time.sleep(3)
 for kind, v in steps:
-    if kind == "url": sh("xcrun", "simctl", "openurl", udid, v); time.sleep(1.5)
+    if kind == "url":
+        with open(inbox, "a") as f: f.write(v + "\n")
+        time.sleep(1.5)
     else: time.sleep(v)
 time.sleep(wait)
 # certains modèles ont plusieurs écrans : on capture l'écran principal
