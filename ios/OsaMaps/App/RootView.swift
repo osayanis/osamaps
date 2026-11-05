@@ -51,6 +51,7 @@ struct RootView: View {
             guard !started else { return }
             started = true
             for f in Registry.features { f.start?() }
+            Links.ready()
             // la position n'est demandée qu'après l'écran d'accueil qui l'explique (ou en simulation)
             if prefs.onboarded || Location.shared.simulated { Location.shared.start() }
         }
