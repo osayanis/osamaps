@@ -2,4 +2,5 @@
 @MainActor
 let allFeatures: [Feature] = [
     shellFeature,
+    searchFeature,
 ]
