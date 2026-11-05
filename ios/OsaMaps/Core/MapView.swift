@@ -34,6 +34,10 @@ struct MapView: UIViewRepresentable {
         let long = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.longPress(_:)))
         long.minimumPressDuration = 0.5
         map.addGestureRecognizer(long)
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
+        tap.delegate = context.coordinator
+        tap.require(toFail: long)
+        map.addGestureRecognizer(tap)
 
         context.coordinator.map = map
         Task { @MainActor in
@@ -98,6 +102,16 @@ struct MapView: UIViewRepresentable {
             guard g.state == .began, let map else { return }
             let coord = map.convert(g.location(in: map), toCoordinateFrom: map)
             for layer in Registry.layers { if layer.longPress?(coord) == true { return } }
+        }
+
+        @objc func tap(_ g: UITapGestureRecognizer) {
+            guard g.state == .ended, let map else { return }
+            let pt = g.location(in: map)
+            // une tape sur une annotation est une sélection (didSelect), pas une tape sur la carte
+            var v = map.hitTest(pt, with: nil)
+            while let view = v { if view is MKAnnotationView { return }; v = view.superview }
+            let coord = map.convert(pt, toCoordinateFrom: map)
+            for layer in Registry.layers { if layer.tap?(coord) == true { return } }
         }
 
         nonisolated func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
