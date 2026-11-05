@@ -468,6 +468,7 @@ struct MascotSettingsSection: View {
                 .frame(minHeight: 32)
             }
             .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .top) { Rectangle().fill(Osa.line).frame(height: 1) }
 
             toggle("Animations", hint: "Rebond, clignements, petits sauts", on: m.settings.animations) { v in m.setSetting { $0.animations = v } }

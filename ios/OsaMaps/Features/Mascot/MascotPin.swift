@@ -266,7 +266,7 @@ struct MascotPinView: View {
                          bounce: live.moving && !live.sleeping,
                          animated: m.settings.animations)
             if live.sleeping {
-                MascotZzz(animated: m.animated).offset(x: 4, y: -10)
+                MascotZzz(animated: m.animated).offset(x: 14, y: -16)
             }
         }
         .shadow(color: .black.opacity(0.35), radius: 3, y: 2)

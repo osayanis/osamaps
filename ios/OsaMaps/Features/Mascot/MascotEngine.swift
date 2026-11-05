@@ -427,6 +427,7 @@ final class MascotEngine {
                 case "wait": try? await Task.sleep(for: .seconds(Double(arg) ?? 1))
                 case "profile": Core.shared.openPanel("profile")
                 case "settings": Core.shared.settingsOpen = true
+                case "testdrive": testDrive()
                 case "points": handleTestLink("osamaps://mascot/points?n=\(arg)")
                 case "wear": handleTestLink("osamaps://mascot/wear?id=\(arg)")
                 case "demo-trip": handleTestLink("osamaps://mascot/demo-trip?name=\(arg.isEmpty ? "Vichy" : arg)")
@@ -434,6 +435,23 @@ final class MascotEngine {
                 }
             }
         }
+    }
+
+    /// Test sans module routing : une ligne droite Moulins → Vichy, conduite démarrée comme osamaps://drive.
+    private func testDrive() {
+        let a = Location.defaultCenter, b = CLLocationCoordinate2D(latitude: 46.1278, longitude: 3.4258)
+        let coords = (0...40).map { i -> Coord in
+            let t = Double(i) / 40
+            return Coord(lat: a.latitude + (b.latitude - a.latitude) * t, lng: a.longitude + (b.longitude - a.longitude) * t)
+        }
+        let line = coords.map(\.coordinate)
+        let dist = Geo.cumulative(line).last ?? 0
+        let r = Route(id: "mascot-test", coords: coords, distance: dist, duration: dist / 25, maneuvers: [])
+        let core = Core.shared
+        core.destination = Place(name: "Vichy", coordinate: b)
+        core.routes = [r]; core.activeRoute = 0
+        core.mode = .drive; core.follow = true
+        emit(.driveStart(routeId: r.id))
     }
 
     private func handle(_ e: BusEvent) {
