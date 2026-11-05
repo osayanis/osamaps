@@ -432,7 +432,7 @@ struct MascotSettingsSection: View {
                     MascotFigure(size: 44, style: look.shown, head: true, animated: m.settings.animations)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(look.look.displayName).font(.osa(17, .bold)).foregroundStyle(Osa.text)
-                        Text("Ta mascotte te représente sur la carte.").font(.osa(13, .medium)).foregroundStyle(Osa.dim)
+                        Text("Elle te représente sur la carte.").font(.osa(13, .medium)).foregroundStyle(Osa.dim)
                     }
                     Spacer(minLength: 8)
                     Text("Personnaliser").font(.osa(14, .bold)).foregroundStyle(.black)

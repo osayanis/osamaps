@@ -72,10 +72,14 @@ struct MascotEditor: View {
             } else {
                 preview
                     .overlay(alignment: .topLeading) {
+                        // la cabine de camion est large : le titre s'efface dans l'onglet Véhicule
                         VStack(alignment: .leading, spacing: 2) {
                             MascotEyebrow("Personnaliser")
                             Text("Ma mascotte").font(.osa(20, .bold)).foregroundStyle(Osa.text)
                         }
+                        .opacity(tab == .ride && vehicle != .car ? 0 : 1)
+                        .animation(.easeOut(duration: 0.2), value: tab)
+                        .allowsHitTesting(false)
                     }
                     .overlay(alignment: .topTrailing) { closeButton.offset(x: 10, y: -6) }
                 nameField(width: 230)

@@ -1,5 +1,3 @@
-import type { Accessory } from "./Mascot";
-
 /** Niveaux : seuils de points cumulés et petits noms. */
 export const LEVELS = [
   { min: 0, name: "Apprenti du volant" },
@@ -41,23 +39,6 @@ export const BADGES: BadgeDef[] = [
 ];
 
 export const badgeById = (id: string) => BADGES.find((b) => b.id === id);
-
-/** Accessoires : débloqués par un niveau ou un badge. Un seul par emplacement (tête, visage, cou). */
-export interface AccessoryDef { id: Accessory; name: string; spot: "tete" | "visage" | "cou"; level?: number; badge?: string }
-
-export const ACCESSORIES: AccessoryDef[] = [
-  { id: "casquette", name: "Casquette", spot: "tete", level: 2 },
-  { id: "lunettes", name: "Lunettes de soleil", spot: "visage", level: 3 },
-  { id: "echarpe", name: "Écharpe", spot: "cou", level: 4 },
-  { id: "bonnet", name: "Bonnet", spot: "tete", badge: "nuit" },
-  { id: "noeud", name: "Nœud papillon", spot: "cou", level: 6 },
-  { id: "couronne", name: "Couronne", spot: "tete", level: 8 },
-];
-
-export function unlockText(a: AccessoryDef) {
-  if (a.badge) return badgeById(a.badge)?.name ?? a.badge;
-  return `Niveau ${a.level}`;
-}
 
 /** « 12 500 » */
 export const nf = (n: number) => Math.round(n).toLocaleString("fr-FR");

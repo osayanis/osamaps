@@ -1,10 +1,11 @@
-import { useShallow } from "zustand/react/shallow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
 import { useCore, core } from "../../core/store";
 import { Mascot } from "./Mascot";
-import { poke, useMascot, wornAccessories } from "./engine";
+import { poke, useMascot } from "./engine";
+import { useShownLook } from "./look";
+import { usePrefs } from "../../core/prefs";
 import { reducedMotion } from "./motion";
 
 /**
@@ -22,7 +23,8 @@ export function MascotMarker() {
   const hasPos = useCore((s) => s.position != null);
   const mode = useCore((s) => s.mode);
   const live = useMascot((s) => s.live);
-  const worn = useMascot(useShallow(wornAccessories));
+  const style = useShownLook();
+  const vehicle = usePrefs((s) => s.vehicle.kind);
   const animations = useMascot((s) => s.settings.animations);
   const [look, setLook] = useState({ x: 0, y: 0 });
 
@@ -164,7 +166,8 @@ export function MascotMarker() {
         hop={live.hop}
         kart={inKart}
         bounce={animations && live.moving && !live.sleeping}
-        accessories={worn}
+        style={style}
+        vehicle={vehicle}
       />
       {live.sleeping && (
         <svg className="mascot-zzz" viewBox="0 0 30 34" aria-hidden="true">

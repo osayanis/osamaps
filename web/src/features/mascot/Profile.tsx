@@ -1,11 +1,11 @@
-import { useShallow } from "zustand/react/shallow";
 import { useEffect, useState } from "react";
 import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { Mascot } from "./Mascot";
-import { BadgeIcon, LockIcon } from "./BadgeIcon";
-import { ACCESSORIES, BADGES, levelOf, nf, unlockText } from "./data";
-import { isUnlocked, poke, toggleAccessory, useMascot, wornAccessories } from "./engine";
+import { BadgeIcon } from "./BadgeIcon";
+import { BADGES, levelOf, nf } from "./data";
+import { useMascot } from "./engine";
+import { displayName, useShownLook } from "./look";
 import { syncBoard, type Board } from "./leaderboard";
 import { kmh } from "./TripSummary";
 
@@ -14,7 +14,7 @@ export function ProfileButton() {
   const mode = useCore((s) => s.mode);
   const panel = useCore((s) => s.panel);
   const openPanel = useCore((s) => s.openPanel);
-  const worn = useMascot(useShallow(wornAccessories));
+  const look = useShownLook();
   const sleeping = useMascot((s) => s.live.sleeping);
   if (mode === "drive") return null;
   const open = panel === "profile";
@@ -25,7 +25,7 @@ export function ProfileButton() {
       aria-pressed={open}
       onClick={() => openPanel(open ? null : "profile")}
     >
-      <Mascot size={34} crop="head" mood={sleeping ? "sleepy" : "calm"} accessories={worn} />
+      <Mascot size={34} crop="head" mood={sleeping ? "sleepy" : "calm"} style={look} />
     </button>
   );
 }
@@ -39,9 +39,8 @@ export function Profile() {
   const panel = useCore((s) => s.panel);
   const openPanel = useCore((s) => s.openPanel);
   const s = useMascot();
-  const worn = wornAccessories(s);
-  const [hop, setHop] = useState(0);
-  const [tab, setTab] = useState<"badges" | "trajets" | "style">("badges");
+  const look = useShownLook();
+  const [tab, setTab] = useState<"badges" | "trajets">("badges");
   const [board, setBoard] = useState<Board | null>(null);
 
   useEffect(() => {
@@ -59,11 +58,14 @@ export function Profile() {
     <section className="mascot-sheet glass mascot-profile" role="dialog" aria-label="Mon profil">
       <div className="mascot-grabber" aria-hidden="true" />
       <header className="mascot-prof-head">
-        <button className="mascot-prof-hero" onClick={() => { setHop((h) => h + 1); poke(); }} aria-label="Caresser la mascotte">
-          <Mascot size={64} hop={hop} accessories={worn} />
+        <button className="mascot-prof-hero" onClick={() => openPanel("mascot-editor")} aria-label={`Personnaliser ${displayName(look)}`}>
+          <Mascot size={64} style={look} />
+          <span className="mascot-prof-edit" aria-hidden="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z" /></svg>
+          </span>
         </button>
         <div className="mascot-prof-title">
-          <p className="mascot-eyebrow">Niveau {lvl.level}</p>
+          <p className="mascot-eyebrow">{displayName(look)} · Niveau {lvl.level}</p>
           <h2>{lvl.name}</h2>
           <div className="mascot-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(lvl.progress * 100)}>
             <i style={{ transform: `scaleX(${lvl.progress})` }} />
@@ -84,7 +86,7 @@ export function Profile() {
       </div>
 
       <div className="mascot-tabs" role="tablist">
-        {([["badges", `Badges ${nBadges}/${BADGES.length}`], ["trajets", "Trajets"], ["style", "Style"]] as const).map(([id, label]) => (
+        {([["badges", `Badges ${nBadges}/${BADGES.length}`], ["trajets", "Trajets"]] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "is-on" : ""} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
@@ -124,24 +126,6 @@ export function Profile() {
               ))}
             </ul>
           )
-        )}
-
-        {tab === "style" && (
-          <ul className="mascot-skins">
-            {ACCESSORIES.map((a) => {
-              const ok = isUnlocked(a.id);
-              const on = worn.includes(a.id);
-              return (
-                <li key={a.id}>
-                  <button className={`mascot-skin${on ? " is-on" : ""}`} disabled={!ok} aria-pressed={on} onClick={() => toggleAccessory(a.id)}>
-                    <Mascot size={44} crop="head" blink={false} accessories={[a.id]} />
-                    <strong>{a.name}</strong>
-                    <span>{ok ? (on ? "Porté" : "Mettre") : <><LockIcon size={12} /> {unlockText(a)}</>}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
         )}
 
         {s.settings.leaderboard && board && board.top.length > 0 && (
