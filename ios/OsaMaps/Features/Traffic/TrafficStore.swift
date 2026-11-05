@@ -11,6 +11,8 @@ final class TrafficStore {
     var visible: Bool { didSet { Store.save("traffic.visible", visible) } }
     /// Ralentissements sur l'itinéraire actif (nil = rien de connu / pas d'itinéraire).
     var routeRuns: (routeId: String, runs: [TrafficRouteRun], at: Date)? = nil
+    /// Évènements (accidents, fermetures, travaux…) qui touchent l'itinéraire actif.
+    var routeEvents: (routeId: String, events: [TrafficRouteEvent], at: Date)? = nil
     /// Retard restant devant, recalculé en roulant.
     var ahead: TrafficAhead?
     /// Segments envoyés pendant le trajet en cours (affiché dans les réglages, par transparence).

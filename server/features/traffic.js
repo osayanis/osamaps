@@ -20,6 +20,25 @@
 //          traffic:update { features, removed, jams } (serveur → zone, quand ça change).
 import { HttpError } from "../lib/router.js";
 
+/**
+ * Accès en lecture pour le module `events` (même processus, même instance de module) : il réutilise
+ * les évènements Bison Futé déjà téléchargés ici, les bouchons communautaires et le calcul « along »
+ * pour ne pas compter deux fois un retard déjà mesuré. Rempli par `register`.
+ */
+export const trafficShared = {
+  /** Évènements Bison Futé (RRN) en cours, format de `parseEvents`. */
+  events: () => [],
+  /** Date (ms) du dernier téléchargement réussi des évènements Bison Futé (0 = jamais). */
+  eventsAt: () => 0,
+  eventsError: () => null,
+  /** Bouchons détectés par la communauté. */
+  jams: () => [],
+  /** Ralentissements mesurés le long d'un tracé (même résultat que POST /traffic/along). */
+  along: (coords) => ({ runs: [], totalDelay: 0 }),
+  /** Quelqu'un regarde : rafraîchir les sources officielles du trafic. */
+  demand: () => {},
+};
+
 // ───────────────────────────── réglages ─────────────────────────────
 const CELL_M = 60;                        // taille d'une cellule
 const DLAT = CELL_M / 111_320;            // pas en latitude
@@ -179,7 +198,7 @@ const SUBTYPE_TITLE = {
   roadMarkingWork: "Marquage au sol", repairWork: "Réparations",
 };
 
-function parseEvents(xml, now = Date.now()) {
+export function parseEvents(xml, now = Date.now()) {
   const best = new Map(); // situation id → meilleur enregistrement
   for (const sit of xml.split(/<(?:\w+:)?situation\s/).slice(1)) {
     const sitId = /^id="([^"]+)"/.exec(sit)?.[1] ?? Math.random().toString(36);
@@ -225,8 +244,15 @@ function parseEvents(xml, now = Date.now()) {
         where: where.join(" · ").slice(0, 200) || null,
         source,
         severity,
+        start: Number.isFinite(start) ? new Date(start).toISOString() : null,
         end: end && Number.isFinite(end) ? new Date(end).toISOString() : null,
         coord,
+        // zone linéaire (début → fin) quand le message en donne une
+        line: (() => {
+          const toBlock = first(rec, "to");
+          const toPt = toBlock ? [Number(first(toBlock, "longitude")), Number(first(toBlock, "latitude"))] : null;
+          return fromPt && toPt && isLngLat(fromPt) && isLngLat(toPt) && dist(fromPt, toPt) > 30 ? [fromPt, toPt] : null;
+        })(),
       };
       const prev = best.get(sitId);
       if (!prev || KIND_RANK[kind] < KIND_RANK[prev.kind]) best.set(sitId, ev);
@@ -358,6 +384,15 @@ export async function register({ io, route, store, log }) {
       events.busy = false;
     }
   }
+
+  Object.assign(trafficShared, {
+    events: () => events.list,
+    eventsAt: () => events.at,
+    eventsError: () => events.error,
+    jams: () => jams,
+    along: (coords) => along(coords),
+    demand: () => demand(),
+  });
 
   /** Quelqu'un regarde le trafic : on garde les sources à jour (sans bloquer la réponse). */
   function demand() {

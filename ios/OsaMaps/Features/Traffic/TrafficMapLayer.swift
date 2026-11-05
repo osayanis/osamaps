@@ -9,7 +9,9 @@ final class TrafficMapController {
     static let shared = TrafficMapController()
 
     static let minZoom = 7.0
-    static let eventsMinZoom = 8.0
+    static let eventsMinZoom = 7.0
+    /// Tracés des fermetures / travaux (traits pointillés) seulement de près.
+    static let eventLinesMinZoom = 12.0
     /// Degrés : le serveur refuse au-delà de 4.
     static let maxSpan = 3.8
     static let minSpan = 0.1
@@ -18,11 +20,13 @@ final class TrafficMapController {
     private var segs: [String: TrafficSegment] = [:]
     private var events: [TrafficEvent] = []
     private var overlays: [TrafficLinesOverlay] = []
+    private var eventLines: [TrafficEventLineOverlay] = []
+    private var eventLinesKey = ""
     private var annotations: [String: TrafficEventAnnotation] = [:]
     private var seq = 0
     private var watching = false
     /// Zone déjà chargée (avec marge) et quand : inutile de recharger si on reste dedans.
-    private var loaded: (bbox: [Double], at: Date)?
+    private var loaded: (bbox: [Double], at: Date, zoomBucket: Int)?
     private var pendingRefresh: Task<Void, Never>?
     private var lastFetch = Date.distantPast
     private var renderScheduled = false
@@ -36,11 +40,25 @@ final class TrafficMapController {
         MapLayer(id: "traffic", zIndex: 20,
                  attach: { [unowned self] map in attach(map) },
                  renderer: { overlay in
+                     if let o = overlay as? TrafficEventLineOverlay { return TrafficEventLineRenderer(overlay: o) }
                      guard let o = overlay as? TrafficLinesOverlay else { return nil }
                      return TrafficLinesRenderer(overlay: o)
                  },
                  annotationView: { [unowned self] map, ann in annotationView(map, ann) },
-                 didSelect: { _, ann in
+                 didSelect: { map, ann in
+                     if let c = ann as? MKClusterAnnotation, c.memberAnnotations.first is TrafficEventAnnotation {
+                         // groupe : on zoome dessus (comme Waze), la fiche viendra au toucher d'une pastille seule
+                         Haptic.play("light")
+                         Core.shared.follow = false
+                         let pts = c.memberAnnotations.map { MKMapPoint($0.coordinate) }
+                         var r = MKMapRect.null
+                         for p in pts { r = r.union(MKMapRect(origin: p, size: MKMapSize(width: 1, height: 1))) }
+                         let minSide = MKMapPointsPerMeterAtLatitude(c.coordinate.latitude) * 600
+                         if r.size.width < minSide { r = r.insetBy(dx: -(minSide - r.size.width) / 2, dy: 0) }
+                         if r.size.height < minSide { r = r.insetBy(dx: 0, dy: -(minSide - r.size.height) / 2) }
+                         map.setVisibleMapRect(r, edgePadding: UIEdgeInsets(top: 120, left: 60, bottom: Core.shared.sheetHeight + 60, right: 80), animated: true)
+                         return true
+                     }
                      guard let a = ann as? TrafficEventAnnotation else { return false }
                      Haptic.play("light")
                      Core.shared.openPanel("traffic-event", data: a.props)
@@ -139,22 +157,25 @@ final class TrafficMapController {
         updateEventVisibility()
         // déjà chargé, récent, et la vue est dedans : les diffusions socket tiennent la zone à jour
         // (comparaison sur une vue plafonnée plus serrée, sinon une vue inclinée n'est jamais « dedans »)
-        if let l = loaded, Date().timeIntervalSince(l.at) < 120, Self.contains(l.bbox, viewBbox(margin: 0, cap: Self.maxSpan * 0.6) ?? bb) { return }
+        let bucket = Self.zoomBucket(map.map(Self.zoom(of:)) ?? 10)
+        if let l = loaded, Date().timeIntervalSince(l.at) < 120, bucket <= l.zoomBucket,
+           Self.contains(l.bbox, viewBbox(margin: 0, cap: Self.maxSpan * 0.6) ?? bb) { return }
         // au plus un chargement toutes les 3 s ; le suivant est reprogrammé
         if Date().timeIntervalSince(lastFetch) < 3 { scheduleRefresh(); return }
         lastFetch = Date()
         Socket.shared.emit("traffic:watch", ["bbox": bb])
         watching = true
         let q = bb.map { String(format: "%.4f", $0) }.joined(separator: ",")
+        let z = String(format: "%.1f", map.map(Self.zoom(of:)) ?? 10)
         Task { @MainActor [weak self] in
             do {
                 async let s = API.get("traffic?bbox=\(q)", as: TrafficSegmentsResponse.self)
-                async let e = API.get("traffic/events?bbox=\(q)", as: TrafficEventsResponse.self)
+                async let e = API.get("events?bbox=\(q)&z=\(z)", as: TrafficEventsResponse.self)
                 let (segsRes, evRes) = try await (s, e)
                 guard let self, my == self.seq, TrafficStore.shared.visible else { return }
                 self.segs = Dictionary(segsRes.features.map { ($0.properties.id, $0) }, uniquingKeysWith: { _, b in b })
                 self.events = evRes.features
-                self.loaded = (bb, Date())
+                self.loaded = (bb, Date(), bucket)
                 self.render()
                 #if DEBUG
                 let slow = segsRes.features.filter { $0.properties.level != "ok" }.count
@@ -168,6 +189,9 @@ final class TrafficMapController {
             }
         }
     }
+
+    /// Le serveur densifie selon le zoom (`z`) : en zoomant, on recharge en franchissant ces paliers.
+    static func zoomBucket(_ z: Double) -> Int { z < 9 ? 0 : z < 10 ? 1 : z < 11 ? 2 : z < 12 ? 3 : z < 13 ? 4 : 5 }
 
     private static func contains(_ outer: [Double], _ inner: [Double]) -> Bool {
         inner[0] >= outer[0] && inner[1] >= outer[1] && inner[2] <= outer[2] && inner[3] <= outer[3]
@@ -211,12 +235,17 @@ final class TrafficMapController {
         updateEventVisibility()
     }
 
-    /// Évènements : seulement à partir du zoom 8, mis à jour par différence (pas de clignotement).
+    /// Évènements : seulement à partir du zoom 7, filtrés selon le zoom (au loin, seulement l'important),
+    /// mis à jour par différence (pas de clignotement). MapKit regroupe les pastilles trop proches.
     private func updateEventVisibility() {
         guard let map else { return }
-        let show = TrafficStore.shared.visible && Self.zoom(of: map) >= Self.eventsMinZoom
+        let z = Self.zoom(of: map)
+        let show = TrafficStore.shared.visible && z >= Self.eventsMinZoom
         var wanted: [String: TrafficEvent] = [:]
-        if show { for e in events { wanted[e.properties.id] = e } }
+        if show {
+            for e in events where Self.visible(e.properties, zoom: z) { wanted[e.properties.id] = e }
+        }
+        updateEventLines(show && z >= Self.eventLinesMinZoom ? Array(wanted.values) : [])
         let stale = annotations.filter { wanted[$0.key] == nil || wanted[$0.key]!.properties != $0.value.props }
         if !stale.isEmpty {
             map.removeAnnotations(Array(stale.values))
@@ -233,19 +262,62 @@ final class TrafficMapController {
     }
 
     private func annotationView(_ map: MKMapView, _ ann: MKAnnotation) -> MKAnnotationView? {
+        if let c = ann as? MKClusterAnnotation { return clusterView(map, c) }
         guard let a = ann as? TrafficEventAnnotation else { return nil }
         let id = "traffic-event"
         let v = map.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: a, reuseIdentifier: id)
         v.annotation = a
         let kind = a.props.eventKind
-        v.image = TrafficEventImage.image(kind)
+        v.image = TrafficEventImage.image(kind, severe: a.props.severity >= 3)
         v.canShowCallout = false
         v.collisionMode = .circle
-        v.displayPriority = MKFeatureDisplayPriority(rawValue: 900 - Float(kind.rank) * 40)
+        // l'important (fermetures, accidents, gravité forte) n'est jamais regroupé ni masqué en premier
+        v.displayPriority = MKFeatureDisplayPriority(rawValue: min(1000, 700 + Float(a.props.severity) * 60 - Float(kind.rank) * 10))
+        v.clusteringIdentifier = a.props.severity >= 3 && kind.rank <= 2 ? nil : "traffic-events"
         v.isAccessibilityElement = true
         v.accessibilityLabel = [a.props.title, a.props.road].compactMap { $0 }.joined(separator: ", ")
         v.accessibilityTraits = .button
         return v
+    }
+
+    private func clusterView(_ map: MKMapView, _ c: MKClusterAnnotation) -> MKAnnotationView? {
+        let members = c.memberAnnotations.compactMap { $0 as? TrafficEventAnnotation }
+        guard !members.isEmpty, members.count == c.memberAnnotations.count else { return nil }
+        let id = "traffic-cluster"
+        let v = map.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: c, reuseIdentifier: id)
+        v.annotation = c
+        let top = members.map(\.props).min { ($0.eventKind.rank, -$0.severity) < ($1.eventKind.rank, -$1.severity) }!
+        v.image = TrafficEventImage.cluster(top.eventKind, count: members.count)
+        v.canShowCallout = false
+        v.collisionMode = .circle
+        v.displayPriority = .defaultHigh
+        v.isAccessibilityElement = true
+        v.accessibilityLabel = "\(members.count) évènements, dont \(top.title)"
+        v.accessibilityTraits = .button
+        return v
+    }
+
+    /// Densité selon le zoom (le serveur filtre déjà, on affine en zoomant/dézoomant sans recharger).
+    static func visible(_ p: TrafficEventProps, zoom z: Double) -> Bool {
+        switch p.eventKind {
+        case .hotspot: return z >= 12.5 || (z >= 11 && p.severity >= 2)
+        case .fuel: return z >= 11
+        case .weather, .flood: return z < 12 || p.severity >= 3   // vigilance : vue d'ensemble
+        case .works, .lanes: return p.severity >= 2 ? z >= 9 : z >= 12
+        default: return p.severity >= 3 || z >= 9
+        }
+    }
+
+    /// Traits pointillés des fermetures et chantiers (de près) : un overlay unique, recréé si la liste change.
+    private func updateEventLines(_ list: [TrafficEvent]) {
+        guard let map else { return }
+        let lines = list.filter { [.closure, .lanes, .works].contains($0.properties.eventKind) && ($0.properties.line?.count ?? 0) >= 2 }
+        let key = lines.map(\.properties.id).sorted().joined(separator: "|")
+        guard key != eventLinesKey else { return }
+        eventLinesKey = key
+        map.removeOverlays(eventLines)
+        eventLines = lines.map { TrafficEventLineOverlay(kind: $0.properties.eventKind, coords: $0.properties.lineCoordinates) }
+        if !eventLines.isEmpty { map.addOverlays(eventLines, level: Core.shared.mode == .drive ? .aboveLabels : .aboveRoads) }
     }
 
     // MARK: - Appui sur un tronçon
@@ -300,31 +372,81 @@ final class TrafficEventAnnotation: MKPointAnnotation {
 }
 
 /// Pastilles des évènements : fond sombre, anneau de la couleur d'état, glyphe blanc.
+/// Gravité forte : pastille un peu plus grande et anneau plus épais.
 @MainActor
 enum TrafficEventImage {
-    private static var cache: [TrafficEventKind: UIImage] = [:]
+    private static var cache: [String: UIImage] = [:]
 
-    static func image(_ kind: TrafficEventKind) -> UIImage {
-        if let i = cache[kind] { return i }
-        let size: CGFloat = 30
-        let cfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
-        let glyph = (UIImage(systemName: kind.symbol, withConfiguration: cfg) ?? UIImage(systemName: "exclamationmark", withConfiguration: cfg)!)
+    private static func glyph(_ kind: TrafficEventKind, _ pt: CGFloat) -> UIImage {
+        let cfg = UIImage.SymbolConfiguration(pointSize: pt, weight: .bold)
+        return (UIImage(systemName: kind.symbol, withConfiguration: cfg) ?? UIImage(systemName: "exclamationmark", withConfiguration: cfg)!)
             .withTintColor(.white, renderingMode: .alwaysOriginal)
+    }
+
+    static func image(_ kind: TrafficEventKind, severe: Bool = false) -> UIImage {
+        let key = "\(kind.rawValue)-\(severe)"
+        if let i = cache[key] { return i }
+        let size: CGFloat = severe ? 34 : 28
+        let g = glyph(kind, severe ? 14 : 12)
         let img = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
             let r = CGRect(x: 1.5, y: 1.5, width: size - 3, height: size - 3)
             let c = ctx.cgContext
             c.setFillColor(UIColor(red: 14 / 255, green: 14 / 255, blue: 20 / 255, alpha: 0.92).cgColor)
             c.fillEllipse(in: r)
             c.setStrokeColor(kind.uiTone.cgColor)
-            c.setLineWidth(2.5)
+            c.setLineWidth(severe ? 3 : 2.2)
             c.strokeEllipse(in: r.insetBy(dx: 0.5, dy: 0.5))
-            let gs = glyph.size
-            let scale = min(1, 17 / max(gs.width, gs.height))
+            let gs = g.size
+            let maxSide = severe ? 19.0 : 15.0
+            let scale = min(1, maxSide / max(gs.width, gs.height))
             let w = gs.width * scale, h = gs.height * scale
-            glyph.draw(in: CGRect(x: (size - w) / 2, y: (size - h) / 2, width: w, height: h))
+            g.draw(in: CGRect(x: (size - w) / 2, y: (size - h) / 2, width: w, height: h))
         }
-        cache[kind] = img
+        cache[key] = img
         return img
+    }
+
+    /// Groupe d'évènements : pastille de l'évènement le plus important + badge blanc avec le nombre.
+    static func cluster(_ kind: TrafficEventKind, count: Int) -> UIImage {
+        let label = count > 99 ? "99+" : "\(count)"
+        let key = "cluster-\(kind.rawValue)-\(label)"
+        if let i = cache[key] { return i }
+        let base = image(kind, severe: true)
+        let font = UIFont.systemFont(ofSize: 11, weight: .heavy)
+        let text = NSAttributedString(string: label, attributes: [.font: font, .foregroundColor: UIColor.black])
+        let ts = text.size()
+        let bw = max(18, ts.width + 9), bh: CGFloat = 18
+        let size = CGSize(width: base.size.width + bw * 0.55, height: base.size.height + 4)
+        let img = UIGraphicsImageRenderer(size: size).image { ctx in
+            base.draw(at: CGPoint(x: 0, y: 4))
+            let br = CGRect(x: size.width - bw, y: 0, width: bw, height: bh)
+            let c = ctx.cgContext
+            c.setFillColor(UIColor.white.cgColor)
+            c.addPath(UIBezierPath(roundedRect: br, cornerRadius: bh / 2).cgPath)
+            c.fillPath()
+            text.draw(at: CGPoint(x: br.midX - ts.width / 2, y: br.midY - ts.height / 2))
+        }
+        cache[key] = img
+        return img
+    }
+}
+
+/// Tracé d'une fermeture ou d'un chantier (immuable, dessiné en pointillés).
+final class TrafficEventLineOverlay: MKPolyline, @unchecked Sendable {
+    private(set) var kind: TrafficEventKind = .works
+    convenience init(kind: TrafficEventKind, coords: [CLLocationCoordinate2D]) {
+        self.init(coordinates: coords, count: coords.count)
+        self.kind = kind
+    }
+}
+
+final class TrafficEventLineRenderer: MKPolylineRenderer, @unchecked Sendable {
+    init(overlay: TrafficEventLineOverlay) {
+        super.init(polyline: overlay)
+        strokeColor = overlay.kind == .closure ? UIColor(red: 1.0, green: 0.271, blue: 0.227, alpha: 0.95) : UIColor(red: 1.0, green: 0.624, blue: 0.039, alpha: 0.9)
+        lineWidth = overlay.kind == .closure ? 5 : 4
+        lineDashPattern = overlay.kind == .closure ? [2, 7] : [6, 6]
+        lineCap = .round
     }
 }
 

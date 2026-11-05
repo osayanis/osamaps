@@ -58,60 +58,115 @@ struct TrafficSegmentsResponse: Codable, Sendable {
     var features: [TrafficSegment]
 }
 
-/// Évènement officiel (DATEX II, Evenementiel-DIR).
+/// Type d'un évènement multi-sources (`server/features/events.js`).
 enum TrafficEventKind: String, CaseIterable, Sendable {
-    case closure, accident, slow, obstacle, conditions, works, lanes
+    case closure, accident, jam, danger, flood, weather, lanes, works, fuel, hotspot
 
     /// Symbole SF (glyphe blanc dans la pastille) ; repli si absent du système.
     var symbol: String {
         switch self {
         case .closure: "minus"
         case .accident: "car.side.rear.and.collision.and.car.side.front"
-        case .slow: "tortoise.fill"
-        case .obstacle: "exclamationmark"
-        case .conditions: "snowflake"
-        case .works: "cone.fill"
+        case .jam: "car.2.fill"
+        case .danger: "exclamationmark"
+        case .flood: "water.waves"
+        case .weather: "cloud.bolt.rain.fill"
         case .lanes: "arrow.triangle.merge"
+        case .works: "cone.fill"
+        case .fuel: "fuelpump.slash.fill"
+        case .hotspot: "exclamationmark.triangle.fill"
         }
     }
 
     /// La couleur ne dit que l'état : fermeture / bouchon = rouge, danger = jaune, gêne = orange.
     var tone: Color {
         switch self {
-        case .closure, .slow: Osa.jam
-        case .accident, .obstacle, .conditions: Osa.danger
-        case .works, .lanes: Osa.slow
+        case .closure, .jam: Osa.jam
+        case .accident, .danger, .weather, .flood, .hotspot: Osa.danger
+        case .works, .lanes, .fuel: Osa.slow
         }
     }
 
     var uiTone: UIColor { UIColor(tone) }
 
-    /// Rang d'importance (petit = plus important) : sert à la priorité d'affichage sur la carte.
+    var label: String {
+        switch self {
+        case .closure: "Route fermée"
+        case .accident: "Accident"
+        case .jam: "Bouchon"
+        case .danger: "Danger"
+        case .flood: "Vigilance crues"
+        case .weather: "Vigilance météo"
+        case .lanes: "Voies réduites"
+        case .works: "Travaux"
+        case .fuel: "Rupture de carburant"
+        case .hotspot: "Section accidentogène"
+        }
+    }
+
+    /// Rang d'importance (petit = plus important) : priorité d'affichage sur la carte.
     var rank: Int {
         switch self {
         case .closure: 0
         case .accident: 1
-        case .slow: 2
-        case .obstacle: 3
-        case .conditions: 4
-        case .works: 5
+        case .jam: 2
+        case .danger: 3
+        case .flood: 4
+        case .weather: 5
         case .lanes: 6
+        case .works: 7
+        case .fuel: 8
+        case .hotspot: 9
         }
     }
 }
 
+struct TrafficEventSource: Codable, Hashable, Sendable {
+    var id: String
+    var name: String
+}
+
+struct TrafficRelatedJam: Codable, Hashable, Sendable {
+    var id: String
+    var delay: Double?
+    var speed: Double?
+    var distance: Double?
+}
+
+/// Propriétés d'un évènement fusionné (GET /events, POST /events/route).
 struct TrafficEventProps: Codable, Hashable, Sendable {
     var id: String
-    var kind: String
+    var type: String
+    var severity: Int
     var title: String
-    var road: String?
     var description: String?
-    var `where`: String?
-    var source: String?
-    var severity: String?
+    var original: String?
+    var lang: String?
+    var road: String?
+    var direction: String?
+    var lanes: String?
+    var start: String?
     var end: String?
+    var delay: Double?
+    var speed: Double?
+    var blocking: Bool?
+    var confidence: Double?
+    var sources: [TrafficEventSource]?
+    var merged: Int?
+    var relatedJam: TrafficRelatedJam?
+    var line: [[Double]]?
 
-    var eventKind: TrafficEventKind { TrafficEventKind(rawValue: kind) ?? .obstacle }
+    var eventKind: TrafficEventKind { TrafficEventKind(rawValue: type) ?? .danger }
+
+    /// « élevée » / « moyenne » / « faible » (confiance calculée par le serveur).
+    var confidenceLabel: String {
+        let c = confidence ?? 0.5
+        return c >= 0.85 ? "élevée" : c >= 0.6 ? "moyenne" : "faible"
+    }
+
+    var lineCoordinates: [CLLocationCoordinate2D] {
+        (line ?? []).compactMap { $0.count >= 2 ? CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) : nil }
+    }
 }
 
 struct TrafficPointGeometry: Codable, Hashable, Sendable {
@@ -131,6 +186,47 @@ struct TrafficEvent: Codable, Hashable, Sendable {
 
 struct TrafficEventsResponse: Codable, Sendable {
     var features: [TrafficEvent]
+}
+
+/// Réponse de `POST /events/route` : évènements touchant le tracé envoyé (mètres depuis son début).
+struct TrafficEventsRouteResult: Codable, Sendable {
+    struct Hit: Codable, Sendable {
+        var id: String
+        var type: String
+        var severity: Int
+        var title: String
+        var description: String?
+        var road: String?
+        var lanes: String?
+        var blocking: Bool?
+        var confidence: Double?
+        var sources: [TrafficEventSource]?
+        var point: [Double]
+        var at: Double
+        var length: Double
+        var routeDelay: Double
+        var alreadyMeasured: Bool?
+
+        var eventKind: TrafficEventKind { TrafficEventKind(rawValue: type) ?? .danger }
+    }
+    var events: [Hit]
+    var totalDelay: Double
+}
+
+/// Un évènement sur l'itinéraire actif, en mètres depuis le début du tracé de la route.
+struct TrafficRouteEvent: Equatable, Sendable {
+    var id: String
+    var kind: TrafficEventKind
+    var severity: Int
+    var title: String
+    var road: String?
+    var lanes: String?
+    var blocking: Bool
+    var confidence: Double
+    var from: Double
+    var to: Double
+    /// Retard estimé (s), 0 si déjà compté par le trafic mesuré.
+    var delay: Double
 }
 
 /// Diffusion socket `traffic:update` (seulement ce qui a changé dans la zone).

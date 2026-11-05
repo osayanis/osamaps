@@ -116,19 +116,93 @@ struct TrafficSheet: View {
     }
 
     private func eventCard(_ e: TrafficEventProps) -> some View {
-        card {
-            header(icon: Image(systemName: Self.symbol(e.eventKind)).font(.system(size: 19, weight: .bold)),
-                   tone: e.eventKind.tone, title: e.title, subtitle: e.road)
-            if let w = e.where { Text(w).font(.osa(14, .medium)).foregroundStyle(Osa.text) }
-            if let d = e.description { Text(d).font(.osa(14, .medium)).foregroundStyle(Osa.dim) }
-            HStack(spacing: 14) {
-                if let u = Self.until(e.end) { Text(u) }
-                Text("Bison Futé" + (e.source.map { " · \($0)" } ?? ""))
+        let kind = e.eventKind
+        let subtitle = [e.road, e.direction].compactMap { $0 }.joined(separator: " · ")
+        return card {
+            header(icon: Image(systemName: Self.symbol(kind)).font(.system(size: 19, weight: .bold)),
+                   tone: kind.tone, title: e.title, subtitle: subtitle.isEmpty ? kind.label : subtitle)
+            if let d = e.description { Text(d).font(.osa(14, .medium)).foregroundStyle(Osa.text).fixedSize(horizontal: false, vertical: true) }
+            // faits clés en pilules sobres : voies, retard, vitesse, fin
+            let facts = Self.facts(e)
+            if !facts.isEmpty {
+                FlowRow(spacing: 6) {
+                    ForEach(facts, id: \.self) { f in
+                        Text(f).font(.osa(12, .semibold)).foregroundStyle(Osa.text)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Osa.surfaceHi, in: Capsule())
+                    }
+                }
             }
-            .font(.osa(12, .semibold))
-            .foregroundStyle(Osa.faint)
+            if let o = e.original, !o.isEmpty {
+                DisclosureGroup {
+                    Text(o).font(.osa(13, .regular)).foregroundStyle(Osa.dim).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+                } label: {
+                    Text(Self.originalLabel(e.lang)).font(.osa(13, .semibold)).foregroundStyle(Osa.dim)
+                }
+                .tint(Osa.dim)
+            }
+            sourcesRow(e)
         }
         .accessibilityElement(children: .contain)
+    }
+
+    /// « Sources : Bison Futé, Autobahn · confiance élevée » + jauge 3 crans.
+    private func sourcesRow(_ e: TrafficEventProps) -> some View {
+        let names = (e.sources ?? []).map(\.name)
+        let c = e.confidence ?? 0.5
+        let steps = c >= 0.85 ? 3 : c >= 0.6 ? 2 : 1
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                HStack(spacing: 3) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Capsule().fill(i < steps ? Osa.text : Osa.surfaceHi).frame(width: 14, height: 5)
+                    }
+                }
+                Text("Confiance \(e.confidenceLabel)" + (names.count > 1 ? " · \(names.count) sources concordantes" : ""))
+                    .font(.osa(12, .semibold)).foregroundStyle(Osa.dim)
+            }
+            .accessibilityElement(children: .combine)
+            Text(names.isEmpty ? "Source inconnue" : names.joined(separator: " · "))
+                .font(.osa(12, .semibold)).foregroundStyle(Osa.faint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    static func facts(_ e: TrafficEventProps) -> [String] {
+        var out: [String] = []
+        if let l = e.lanes, l != e.title { out.append(l) }
+        if let d = e.delay ?? e.relatedJam?.delay, d >= 60 { out.append("~\(Int((d / 60).rounded())) min de retard") }
+        if let v = e.speed, e.eventKind == .jam { out.append("\(Int(v)) km/h") }
+        if e.relatedJam != nil, e.eventKind != .jam { out.append("Bouchon lié") }
+        if let u = until(e.end) { out.append(u) } else if let s = since(e.start), [.accident, .danger, .jam].contains(e.eventKind) { out.append(s) }
+        return out
+    }
+
+    static func originalLabel(_ lang: String?) -> String {
+        switch lang {
+        case "de": "Message d'origine (allemand)"
+        case "nl": "Message d'origine (néerlandais)"
+        case "es": "Message d'origine (espagnol)"
+        case "ca": "Message d'origine (catalan)"
+        default: "Détails de la source"
+        }
+    }
+
+    /// « Depuis 14:32 » / « Depuis le 3 novembre ».
+    static func since(_ iso: String?) -> String? {
+        guard let d = parseDate(iso) else { return nil }
+        let fr = Locale(identifier: "fr_FR")
+        if Calendar.current.isDateInToday(d) {
+            return "Depuis \(d.formatted(Date.FormatStyle(locale: fr).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)))"
+        }
+        return "Depuis le \(d.formatted(Date.FormatStyle(locale: fr).day().month(.wide)))"
+    }
+
+    static func parseDate(_ iso: String?) -> Date? {
+        guard let iso else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
     }
 
     private func segmentCard(_ s: TrafficSegmentProps) -> some View {
@@ -152,15 +226,39 @@ struct TrafficSheet: View {
 
     /// « Jusqu'à 18:30 » / « Jusqu'au 12 novembre à 18:30 ».
     static func until(_ iso: String?) -> String? {
-        guard let iso else { return nil }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return nil }
+        guard let d = parseDate(iso) else { return nil }
         let fr = Locale(identifier: "fr_FR")
         let time = d.formatted(Date.FormatStyle(locale: fr).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
         if Calendar.current.isDateInToday(d) { return "Jusqu'à \(time)" }
         let day = d.formatted(Date.FormatStyle(locale: fr).day().month(.wide))
         return "Jusqu'au \(day) à \(time)"
+    }
+}
+
+// MARK: - Rangée qui passe à la ligne (pilules)
+
+struct FlowRow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, w: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > 0, x + s.width > maxW { x = 0; y += rowH + spacing; rowH = 0 }
+            x += s.width + spacing; rowH = max(rowH, s.height); w = max(w, x - spacing)
+        }
+        return CGSize(width: min(w, maxW), height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + s.width > bounds.maxX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing; rowH = max(rowH, s.height)
+        }
     }
 }
 
@@ -201,7 +299,7 @@ struct TrafficSettingsSection: View {
 
             Toggle(isOn: $store.visible) {
                 row("Afficher le trafic",
-                    "Vert fluide, orange ralenti, rouge bouchon. Plus les travaux, accidents et fermetures du réseau national.")
+                    "Vert fluide, orange ralenti, rouge bouchon. Plus les accidents, fermetures, travaux, vigilances météo et ruptures de carburant, recoupés entre plusieurs sources.")
             }
             .toggleStyle(TrafficSwitchStyle())
 
@@ -228,7 +326,7 @@ struct TrafficSettingsSection: View {
             }
             .tint(Osa.dim)
 
-            Text("Sources : contributions OsaMaps et Bison Futé / Directions interdépartementales des routes (mesures et évènements, Licence Ouverte). Tant qu'il y a peu d'utilisateurs, la carte reste souvent vide hors grands axes : c'est normal, rien n'est inventé.")
+            Text("Sources : contributions OsaMaps ; Bison Futé / DIR ; DiaLog ; open data des villes et départements (Paris, Lyon, Rennes, Bordeaux, Toulouse, Lille, Tours, Angers, Loire-Atlantique, Côtes-d'Armor, Mayenne, Sarthe) ; Météo-France via MeteoAlarm ; prix-carburants ; ONISR (accidents 3 dernières années) ; Autobahn GmbH, NDW, DGT, Servei Català de Trànsit, CITA. Données ouvertes, citées dans chaque fiche. Rien n'est inventé : sans source, rien ne s'affiche.")
                 .font(.osa(12, .medium)).foregroundStyle(Osa.faint)
                 .fixedSize(horizontal: false, vertical: true)
         }
