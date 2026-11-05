@@ -106,10 +106,14 @@ enum Geo {
     }
 
     /// Heure d'arrivée « 17:42 ».
-    static func formatETA(_ seconds: Double, from now: Date = .now) -> String {
+    private static let etaFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "fr_FR")
         f.dateFormat = "HH:mm"
-        return f.string(from: now.addingTimeInterval(seconds))
+        return f
+    }()
+
+    static func formatETA(_ seconds: Double, from now: Date = .now) -> String {
+        etaFormatter.string(from: now.addingTimeInterval(seconds))
     }
 }
