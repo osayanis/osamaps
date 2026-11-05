@@ -12,6 +12,7 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
     static let eventsMinZoom = 8.0
     /// Degrés : le serveur refuse au-delà de 4.
     static let maxSpan = 3.8
+    static let minSpan = 0.1
 
     private weak var map: MKMapView?
     private var segs: [String: TrafficSegment] = [:]
@@ -23,6 +24,7 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
     /// Zone déjà chargée (avec marge) et quand : inutile de recharger si on reste dedans.
     private var loaded: (bbox: [Double], at: Date)?
     private var pendingRefresh: Task<Void, Never>?
+    private var lastFetch = Date.distantPast
     private var renderScheduled = false
     private var tokens: [BusToken] = []
     private var visibleObserved = TrafficStore.shared.visible
@@ -92,17 +94,21 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
     }
 
     /// Zone à charger : la vue + 15 % de marge, limitée à 3,8° autour du centre.
-    private func viewBbox() -> [Double]? {
+    /// En conduite (caméra inclinée), la zone visible va jusqu'à l'horizon : d'où le plafond `cap` autour du centre.
+    private func viewBbox(margin: Double = 0.15, cap: Double = TrafficMapController.maxSpan) -> [Double]? {
         guard let map, Self.zoom(of: map) >= Self.minZoom else { return nil }
         let r = map.visibleMapRect
         let nw = MKMapPoint(x: r.minX, y: r.minY).coordinate
         let se = MKMapPoint(x: r.maxX, y: r.maxY).coordinate
         var w = nw.longitude, e = se.longitude, n = nw.latitude, s = se.latitude
-        let mx = (e - w) * 0.15, my = (n - s) * 0.15
+        let mx = (e - w) * margin, my = (n - s) * margin
         w -= mx; e += mx; s -= my; n += my
         let c = map.centerCoordinate
-        if e - w > Self.maxSpan { w = c.longitude - Self.maxSpan / 2; e = c.longitude + Self.maxSpan / 2 }
-        if n - s > Self.maxSpan { s = c.latitude - Self.maxSpan / 2; n = c.latitude + Self.maxSpan / 2 }
+        // zone minimale (≈ 8 km) : zoomé ou en conduite, on ne recharge pas tous les 300 m
+        if margin > 0, e - w < Self.minSpan { w = c.longitude - Self.minSpan / 2; e = c.longitude + Self.minSpan / 2 }
+        if margin > 0, n - s < Self.minSpan * 0.7 { s = c.latitude - Self.minSpan * 0.35; n = c.latitude + Self.minSpan * 0.35 }
+        if e - w > cap { w = c.longitude - cap / 2; e = c.longitude + cap / 2 }
+        if n - s > cap { s = c.latitude - cap / 2; n = c.latitude + cap / 2 }
         return [max(-180, w), max(-85, s), min(180, e), min(85, n)]
     }
 
@@ -129,7 +135,11 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
         }
         updateEventVisibility()
         // déjà chargé, récent, et la vue est dedans : les diffusions socket tiennent la zone à jour
-        if let l = loaded, Date().timeIntervalSince(l.at) < 120, Self.contains(l.bbox, viewBboxNoMargin() ?? bb) { return }
+        // (comparaison sur une vue plafonnée plus serrée, sinon une vue inclinée n'est jamais « dedans »)
+        if let l = loaded, Date().timeIntervalSince(l.at) < 120, Self.contains(l.bbox, viewBbox(margin: 0, cap: Self.maxSpan * 0.6) ?? bb) { return }
+        // au plus un chargement toutes les 3 s ; le suivant est reprogrammé
+        if Date().timeIntervalSince(lastFetch) < 3 { scheduleRefresh(); return }
+        lastFetch = Date()
         Socket.shared.emit("traffic:watch", ["bbox": bb])
         watching = true
         let q = bb.map { String(format: "%.4f", $0) }.joined(separator: ",")
@@ -145,7 +155,7 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
                 self.render()
                 #if DEBUG
                 let slow = segsRes.features.filter { $0.properties.level != "ok" }.count
-                NSLog("OsaMaps traffic: %d tronçons (%d ralentis), %d évènements", segsRes.features.count, slow, evRes.features.count)
+                NSLog("OsaMaps traffic: %d tronçons (%d ralentis), %d évènements [%@]", segsRes.features.count, slow, evRes.features.count, q)
                 #endif
             } catch {
                 // serveur injoignable : on garde ce qu'on a
@@ -154,14 +164,6 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
                 #endif
             }
         }
-    }
-
-    private func viewBboxNoMargin() -> [Double]? {
-        guard let map else { return nil }
-        let r = map.visibleMapRect
-        let nw = MKMapPoint(x: r.minX, y: r.minY).coordinate
-        let se = MKMapPoint(x: r.maxX, y: r.maxY).coordinate
-        return [nw.longitude, se.latitude, se.longitude, nw.latitude]
     }
 
     private static func contains(_ outer: [Double], _ inner: [Double]) -> Bool {

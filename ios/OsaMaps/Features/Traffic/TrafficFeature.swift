@@ -27,6 +27,7 @@ let trafficFeature = Feature(
 /// Lien de test (build DEBUG uniquement) : `osamaps://traffic-test` recadre la carte là où il y a des
 /// données officielles (autoroutes de l'est lyonnais). Paramètres :
 ///   place=lyon|marseille            zone à montrer
+///   settings=1                      ouvre les Réglages
 ///   open=event|segment              ouvre la fiche du premier évènement / du premier tronçon ralenti chargé
 ///   drive=1&from=lat,lng&to=lat,lng calcule un VRAI itinéraire (Valhalla) et lance la conduite dessus
 ///                                   (le module routing n'est pas dans cette branche) — pour tester along/HUD/alertes
@@ -39,6 +40,15 @@ enum TrafficDebug {
             guard case .custom(let name, let payload) = e, name == "url",
                   let s = payload["url"], let url = URL(string: s), url.host() == "traffic-test" else { return }
             handle(url)
+        }
+        // même test par argument de lancement (évite la confirmation « Ouvrir dans OsaMaps ? » du simulateur) :
+        //   -trafficTest "place=lyon&open=event"
+        if let args = UserDefaults.standard.string(forKey: "trafficTest"), let url = URL(string: "osamaps://traffic-test?" + args) {
+            Task { @MainActor in
+                while !Core.shared.mapReady { try? await Task.sleep(for: .milliseconds(200)) }
+                try? await Task.sleep(for: .seconds(1.5))
+                handle(url)
+            }
         }
     }
 
@@ -54,6 +64,7 @@ enum TrafficDebug {
             : (CLLocationCoordinate2D(latitude: 45.765, longitude: 4.90), 0.20)
         Core.shared.follow = false
         Core.shared.map?.setRegion(MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)), animated: false)
+        if q["settings"] == "1" { Core.shared.settingsOpen = true }
         guard let open = q["open"] else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
