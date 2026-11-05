@@ -47,7 +47,8 @@ struct MascotEditor: View {
     private static var screenH: CGFloat {
         (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 844
     }
-    private var compact: Bool { Self.screenH < 780 }
+    /// Argument de test `-mascotTall YES` : force la mise en page des grands écrans.
+    private var compact: Bool { Self.screenH < 780 && !UserDefaults.standard.bool(forKey: "mascotTall") }
     /// Hauteur dispo pour le panneau (écran − rail − haut de l'écran).
     private var budget: CGFloat { Self.screenH - 290 }
     private var previewH: CGFloat { compact ? 112 : 150 }
