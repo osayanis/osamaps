@@ -10,7 +10,8 @@ import SwiftUI
 ///   émet    .custom("music:command", ["action": "toggle"|"next"|"previous"]) (boutons de la Live Activity)
 ///           .driveStop(arrived: false) (bouton Arrêter, via GuidanceEngine)
 /// DEBUG : argument de lancement -livePreview YES|2|3 → écran d'aperçu des vues (compact, étendu, écran verrouillé) ;
-///         osamaps://live-friend?name=Léa&dest=Gare&in=600&remaining=4200&state=live → Live Activity d'ami de test.
+///         osamaps://live-friend?name=Léa&dest=Gare&in=600&remaining=4200&state=live → Live Activity d'ami de test ;
+///         osamaps://live-music?title=Nightcall&artist=Kavinsky&source=spotify&playing=1 → simule « music:now ».
 @MainActor
 let liveFeature = Feature(
     id: "live",
@@ -19,8 +20,21 @@ let liveFeature = Feature(
     start: {
         GuidanceLive.shared.listen()
         LiveFriends.shared.start()
+        #if DEBUG
+        liveDebugToken = Bus.shared.on { e in
+            MainActor.assumeIsolated {
+                guard case .custom(name: "url", let p) = e, let s = p["url"], let url = URL(string: s), url.host() == "live-music" else { return }
+                let q = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }
+                emit(.custom(name: "music:now", payload: Dictionary(q, uniquingKeysWith: { a, _ in a })))
+            }
+        }
+        #endif
     }
 )
+
+#if DEBUG
+@MainActor private var liveDebugToken: BusToken?
+#endif
 
 @MainActor
 private var liveSlots: [SlotEntry] {

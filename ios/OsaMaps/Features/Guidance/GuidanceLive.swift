@@ -51,6 +51,7 @@ final class GuidanceLive {
     private var groupTask: Task<Void, Never>?
     private var clearTask: Task<Void, Never>?
     private var rerouteTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
     /// Texte d'alerte (sans distance) → type, pour choisir le pictogramme de l'alerte affichée par le moteur.
     private var alertKinds: [String: String] = [:]
     private var traffic: (routeId: String, baseline: Double)?
@@ -152,7 +153,7 @@ final class GuidanceLive {
         incoming = []
         notified = []
         groupTask?.cancel(); groupTask = nil
-        clearTask?.cancel(); rerouteTask?.cancel()
+        clearTask?.cancel(); rerouteTask?.cancel(); retryTask?.cancel()
         traffic = nil
         trafficSilentNext = false
         delay = 0
@@ -260,11 +261,26 @@ final class GuidanceLive {
         let now = Date()
         alertTimes = alertTimes.filter { now.timeIntervalSince($0) < Self.window }
         let lastAlert = alertTimes.last ?? .distantPast
-        if expand, b.kind == "arrival" || (now.timeIntervalSince(lastAlert) >= Self.minGap && alertTimes.count < Self.maxPerWindow) {
+        if expand { retryTask?.cancel() }
+        let gap = now.timeIntervalSince(lastAlert)
+        if expand, b.kind == "arrival" || (gap >= Self.minGap && alertTimes.count < Self.maxPerWindow) {
             wantsAlert = true
             alertTimes.append(now)
+        } else if expand, alertTimes.count < Self.maxPerWindow, b.kind != "arrival" {
+            // trop tôt après la précédente : on la garde et on l'ouvre dès que l'écart est passé (si elle tient encore)
+            let wait = Self.minGap - gap + 0.1
+            NSLog("OsaMaps live : notification « %@ » reportée de %.0f s", b.title, wait)
+            retryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self, !Task.isCancelled, self.activity != nil else { return }
+                var again = b
+                again.until = Date().addingTimeInterval(b.kind == "alert" ? 8 : 6)
+                // alerte déjà dépassée ou presque : inutile
+                if let d0 = again.distance0, let r0 = again.remaining0, let r = self.base?.remaining, d0 - (r0 - r) < 150 { return }
+                self.show(again, expand: true)
+            }
         } else {
-            NSLog("OsaMaps live : notification « %@ » sans ouvrir la Dynamic Island (anti-spam)", b.title)
+            NSLog("OsaMaps live : notification « %@ » sans ouvrir la Dynamic Island", b.title)
         }
         clearTask?.cancel()
         if b.kind != "arrival" {
