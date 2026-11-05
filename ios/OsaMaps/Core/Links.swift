@@ -62,10 +62,7 @@ enum Links {
             core.openPanel(nil)
             Bus.shared.emit(.placeGo(Place(name: q["name"] ?? "Destination", coordinate: .init(latitude: lat, longitude: lng))))
         case "drive":
-            guard let r = core.route else { return }
-            core.routes = [r]; core.activeRoute = 0
-            core.mode = .drive; core.follow = true
-            Bus.shared.emit(.driveStart(routeId: r.id))
+            startDriveWhenRouted()
         case "stop":
             Bus.shared.emit(.driveStop(arrived: false))
             core.mode = .browse
@@ -85,6 +82,26 @@ enum Links {
                                                    tone: DriveAlert.Tone(rawValue: q["tone"] ?? "") ?? .warn)))
         default:
             Bus.shared.emit(.custom(name: "url", payload: ["url": url.absoluteString]))
+        }
+    }
+
+    /// osamaps://drive juste après osamaps://go : l'itinéraire peut être encore en calcul.
+    /// On l'attend (30 s au plus) au lieu d'ignorer le lien.
+    private static var driveWait: Task<Void, Never>?
+    private static func startDriveWhenRouted() {
+        driveWait?.cancel()
+        driveWait = Task { @MainActor in
+            let core = Core.shared
+            for _ in 0..<60 {
+                if let r = core.route, core.mode != .drive {
+                    core.routes = [r]; core.activeRoute = 0
+                    core.mode = .drive; core.follow = true
+                    Bus.shared.emit(.driveStart(routeId: r.id))
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+                if Task.isCancelled { return }
+            }
         }
     }
 }
