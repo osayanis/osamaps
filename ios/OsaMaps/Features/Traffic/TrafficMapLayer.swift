@@ -5,7 +5,7 @@ import UIKit
 /// Port de `TrafficLayer.tsx` : charge la zone visible (bbox), s'abonne à la zone (`traffic:watch`)
 /// et applique les diffusions `traffic:update`.
 @MainActor
-final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
+final class TrafficMapController {
     static let shared = TrafficMapController()
 
     static let minZoom = 7.0
@@ -45,15 +45,12 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
                      Core.shared.openPanel("traffic-event", data: a.props)
                      return true
                  },
-                 regionDidChange: { [unowned self] _ in scheduleRefresh() })
+                 regionDidChange: { [unowned self] _ in scheduleRefresh() },
+                 tap: { [unowned self] coord in tapped(coord) })
     }
 
     private func attach(_ map: MKMapView) {
         self.map = map
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
-        tap.cancelsTouchesInView = false
-        tap.delegate = self
-        map.addGestureRecognizer(tap)
 
         tokens.append(Socket.shared.on("traffic:update") { [weak self] args in
             guard let u = trafficDecode(args.first, as: TrafficUpdate.self) else { return }
@@ -244,14 +241,10 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
 
     // MARK: - Appui sur un tronçon
 
-    nonisolated func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
-
-    @objc private func tapped(_ g: UITapGestureRecognizer) {
-        guard g.state == .ended, let map, TrafficStore.shared.visible, !segs.isEmpty else { return }
-        let p = g.location(in: map)
-        // un marqueur (le nôtre ou celui d'un autre module) a la priorité
-        var v = map.hitTest(p, with: nil)
-        while let cur = v { if cur is MKAnnotationView { return }; v = cur.superview }
+    /// Tape simple sur la carte (hors marqueurs, filtrés par le socle) : fiche du tronçon le plus proche (≤ 14 pt).
+    private func tapped(_ coord: CLLocationCoordinate2D) -> Bool {
+        guard let map, TrafficStore.shared.visible, !segs.isEmpty else { return false }
+        let p = map.convert(coord, toPointTo: map)
         var best: (d: CGFloat, seg: TrafficSegment)?
         for s in segs.values {
             let pts = s.coordinates.map { map.convert($0, toPointTo: map) }
@@ -262,9 +255,10 @@ final class TrafficMapController: NSObject, UIGestureRecognizerDelegate {
                 }
             }
         }
-        guard let best else { return }
+        guard let best else { return false }
         Haptic.play("light")
         Core.shared.openPanel("traffic-segment", data: best.seg.properties)
+        return true
     }
 
     private static func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
