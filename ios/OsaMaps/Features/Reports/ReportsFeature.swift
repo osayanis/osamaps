@@ -96,6 +96,40 @@ private func reportsDebugLaunch() {
             if let id = store.mine.max(by: { $0.value < $1.value })?.key {
                 ReportsPanels.openOwn(ReportsPanels.detail, reportId: id)
             }
+        case "drive-route":
+            // itinéraire droit vers le nord (3,3 km) depuis la position simulée ; journalise les alertes
+            let start = Core.shared.position?.coordinate ?? Location.defaultCenter
+            let coords = (0...30).map { Coord(lat: start.latitude + Double($0) * 0.001, lng: start.longitude) }
+            let route = Route(id: "reports-test", coords: coords, distance: 3300, duration: 200, maneuvers: [])
+            Bus.shared.on { e in
+                var line: String?
+                if case .driveAlert(let a) = e { line = "alerte : \(a.text) | \(Int(a.distance)) m | \(a.tone.rawValue) | \(a.id)" }
+                if case .pointsEarn(let n, let r) = e { line = "points : \(n) \(r)" }
+                guard let line else { return }
+                let s = ReportsStore.shared
+                let full = line + (s.ask.map { " | ask=\($0.id)" } ?? "")
+                NSLog("OsaMaps reports-test %@", full)
+                if let f = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("reports-test.log") {
+                    let old = (try? String(contentsOf: f, encoding: .utf8)) ?? ""
+                    try? (old + full + "\n").write(to: f, atomically: true, encoding: .utf8)
+                }
+            }
+            Core.shared.routes = [route]; Core.shared.activeRoute = 0
+            Core.shared.mode = .drive; Core.shared.follow = true
+            emit(.driveStart(routeId: route.id))
+            // trace de « Toujours là ? » (proposé après le passage)
+            Task { @MainActor in
+                for _ in 0..<40 {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    if let a = ReportsStore.shared.ask { emit(.custom(name: "reports:test-ask", payload: ["id": a.id])); NSLog("OsaMaps reports-test ask %@", a.id)
+                        if let f = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("reports-test.log") {
+                            let old = (try? String(contentsOf: f, encoding: .utf8)) ?? ""
+                            try? (old + "ask : \(a.id)\n").write(to: f, atomically: true, encoding: .utf8)
+                        }
+                        break
+                    }
+                }
+            }
         case "vote-detail":
             // vote « toujours là » puis fiche (doit afficher « Merci, c'est noté »)
             try? await Task.sleep(for: .seconds(2))
