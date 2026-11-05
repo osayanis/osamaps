@@ -1,7 +1,7 @@
 import Foundation
 import CoreLocation
 
-/// Liens `osamaps://…` : pilotage de l'app (tests dans le Simulateur avec `xcrun simctl openurl`)
+/// Liens `osamaps://…` : pilotage de l'app (tests dans le Simulateur : tools/simshot.sh --url=…)
 /// et liens partagés. Les liens inconnus sont relayés aux modules :
 /// `Bus` → `.custom(name: "url", payload: ["url": "…"])` (ex. osamaps://suivre/JETON pour friends).
 ///
@@ -15,8 +15,45 @@ import CoreLocation
 ///   osamaps://alert?text=Police%20signalée&distance=800&tone=police → drive:alert de test
 @MainActor
 enum Links {
+    /// Au lancement à froid par un lien, les modules ne sont pas encore démarrés (pas d'abonnés au Bus) :
+    /// les liens reçus avant `ready()` sont mis de côté puis rejoués.
+    private static var isReady = false
+    private static var pending: [URL] = []
+
+    /// Appelé par RootView une fois tous les modules démarrés.
+    static func ready() {
+        isReady = true
+        let queued = pending; pending = []
+        queued.forEach(handle)
+        #if targetEnvironment(simulator)
+        startSimulatorInbox()
+        #endif
+    }
+
+    #if targetEnvironment(simulator)
+    /// Simulateur uniquement : depuis iOS 27, `simctl openurl` affiche une alerte « Ouvrir dans OsaMaps ? »
+    /// et le lien n'arrive jamais. tools/simshot.py écrit donc ses liens, un par ligne, dans
+    /// Documents/osamaps-links.txt du conteneur de l'app ; on les lit et les traite ici.
+    private static var inboxTimer: Timer?
+    private static func startSimulatorInbox() {
+        guard inboxTimer == nil,
+              let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("osamaps-links.txt") else { return }
+        inboxTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { return }
+            try? FileManager.default.removeItem(at: file)
+            MainActor.assumeIsolated {
+                for line in text.split(whereSeparator: \.isNewline) {
+                    if let url = URL(string: line.trimmingCharacters(in: .whitespaces)) { handle(url) }
+                }
+            }
+        }
+    }
+    #endif
+
     static func handle(_ url: URL) {
         guard url.scheme == "osamaps" else { return }
+        guard isReady else { pending.append(url); return }
         let q = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         let core = Core.shared
         switch url.host() {
