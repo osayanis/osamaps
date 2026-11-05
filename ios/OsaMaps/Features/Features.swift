@@ -3,4 +3,5 @@
 let allFeatures: [Feature] = [
     shellFeature,
     searchFeature,
+    routingFeature,
 ]
