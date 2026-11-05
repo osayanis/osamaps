@@ -25,8 +25,10 @@ let shellFeature = Feature(
     slots: [
         SlotEntry(.overlay, order: 10) { ShellOverlay() },
         SlotEntry(.rail, order: 0) { ShellRailTop() },
+        SlotEntry(.rail, order: 2) { ShellVehicleBadge() },
         SlotEntry(.rail, order: 1000) { ShellRecenterButton() },
         SlotEntry(.settings, order: 0) { ShellGeneralSettings() },
+        SlotEntry(.settings, order: 5) { ShellVehicleSettings() },
         SlotEntry(.settings, order: 1000) { ShellAboutSettings() },
         SlotEntry(.top, order: 10_000) { ShellTopMarker(slot: .top) },
         SlotEntry(.hud, order: 10_000) { ShellTopMarker(slot: .hud) },
@@ -76,6 +78,11 @@ final class ShellState {
         case .driveAlert(let a): if (a.tone == .warn || a.tone == .danger || a.tone == .police) && ShellPrefs.haptics { Haptic.play("warning") }
         case .driveArrived: if ShellPrefs.haptics { Haptic.play("success") }
         case .driveStart: if ShellPrefs.haptics { Haptic.play("light") }
+        case .custom(name: "url", let p):
+            // osamaps://shell/vehicle : ouvre la feuille du véhicule (tests, partages)
+            if let u = p["url"].flatMap(URL.init(string:)), u.host() == "shell", u.path() == "/vehicle" {
+                ShellVehicleState.shared.sheetOpen = true
+            }
         default: break
         }
     }
@@ -111,12 +118,16 @@ struct ShellTopMarker: View {
     }
 }
 
-/// L'overlay du shell : accueil (tant que non vu) + toasts et bannière hors ligne.
+/// L'overlay du shell : accueil (tant que non vu) + toasts et bannière hors ligne
+/// + la feuille du véhicule (posée une fois à ceux qui avaient passé l'accueil avant la question).
 struct ShellOverlay: View {
     @Environment(Prefs.self) private var prefs
+    @Environment(Core.self) private var core
     @State private var forced = UserDefaults.standard.bool(forKey: "shellOnboarding")
+    private var vehicle: ShellVehicleState { .shared }
 
     var body: some View {
+        @Bindable var vehicle = vehicle
         ZStack {
             ShellToastStack()
             if !prefs.onboarded || forced {
@@ -125,5 +136,17 @@ struct ShellOverlay: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: prefs.onboarded)
+        .sheet(isPresented: $vehicle.sheetOpen) { ShellVehicleSheet() }
+        .task(id: askVehicle) {
+            // jamais en conduite ni par-dessus l'accueil ; petit délai pour laisser la carte apparaître
+            guard askVehicle else { return }
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled, askVehicle else { return }
+            ShellVehicleState.shared.sheetOpen = true
+        }
+    }
+
+    private var askVehicle: Bool {
+        prefs.onboarded && !prefs.vehicleChosen && !forced && core.mode == .browse && !core.settingsOpen && !vehicle.sheetOpen
     }
 }

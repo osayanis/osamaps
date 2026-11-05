@@ -3,8 +3,8 @@ import CoreLocation
 import Observation
 
 /// Accueil au premier lancement (slot overlay, tant que `Prefs.onboarded` est faux).
-/// Quatre écrans courts : merci → ce que fait OsaMaps → autorisations (expliquées AVANT d'être
-/// demandées) → pseudo, puis la carte. Glisser à gauche/droite, ou les boutons.
+/// Écrans courts : merci → ce que fait OsaMaps → « Tu conduis quoi ? » (→ dimensions pour les camions)
+/// → autorisations (expliquées AVANT d'être demandées) → pseudo, puis la carte. Glisser à gauche/droite, ou les boutons.
 /// « Revoir l'accueil » (réglages) remet onboarded à faux.
 /// Tests : `-shellOnboarding YES` l'affiche sans toucher aux préférences, `-shellOnboardingStep 2` ouvre l'écran 3.
 struct ShellOnboarding: View {
@@ -13,20 +13,27 @@ struct ShellOnboarding: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step: Int = {
         let n = UserDefaults.standard.integer(forKey: "shellOnboardingStep")
-        return (0..<ShellOnboarding.count).contains(n) ? n : 0
+        return (0..<6).contains(n) ? n : 0
     }()
     @State private var forward = true
     @State private var name = Identity.nickname
     @State private var leaving = false
     @FocusState private var nameFocused: Bool
 
-    static let count = 4
+    enum Page: Hashable { case welcome, features, vehicle, dimensions, permissions, nickname }
+
+    /// Les dimensions ne sont demandées qu'aux camions.
+    private var pages: [Page] {
+        prefs.vehicle.isTruck ? [.welcome, .features, .vehicle, .dimensions, .permissions, .nickname]
+                              : [.welcome, .features, .vehicle, .permissions, .nickname]
+    }
+    private var count: Int { pages.count }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             ZStack {
-                page(step)
+                page(pages[min(step, count - 1)])
                     .id(step)
                     .transition(pageTransition)
             }
@@ -62,7 +69,7 @@ struct ShellOnboarding: View {
     private var header: some View {
         HStack {
             HStack(spacing: 6) {
-                ForEach(0..<Self.count, id: \.self) { i in
+                ForEach(0..<count, id: \.self) { i in
                     Capsule()
                         .fill(i == step ? Color.white : i < step ? Color.white.opacity(0.5) : Color.white.opacity(0.18))
                         .frame(width: i == step ? 22 : 7, height: 7)
@@ -72,10 +79,10 @@ struct ShellOnboarding: View {
                 }
             }
             .accessibilityElement()
-            .accessibilityLabel("Étape \(step + 1) sur \(Self.count)")
+            .accessibilityLabel("Étape \(step + 1) sur \(count)")
             Spacer()
-            if step < Self.count - 1 {
-                Button("Passer") { go(Self.count - 1) }
+            if step < count - 1 {
+                Button("Passer") { go(count - 1) }
                     .font(.osa(15, .semibold))
                     .foregroundStyle(Osa.dim)
                     .frame(minHeight: 44)
@@ -100,8 +107,8 @@ struct ShellOnboarding: View {
             Spacer()
             Button(action: next) {
                 HStack(spacing: 6) {
-                    Text(step == Self.count - 1 ? "C’est parti" : "Continuer")
-                    Image(systemName: step == Self.count - 1 ? "arrow.right" : "chevron.right")
+                    Text(step == count - 1 ? "C’est parti" : "Continuer")
+                    Image(systemName: step == count - 1 ? "arrow.right" : "chevron.right")
                 }
                 .contentTransition(.opacity)
             }
@@ -112,26 +119,28 @@ struct ShellOnboarding: View {
         .animation(Osa.anim, value: step)
     }
 
-    @ViewBuilder private func page(_ i: Int) -> some View {
-        switch i {
-        case 0: ShellObWelcome()
-        case 1: ShellObFeatures()
-        case 2: ShellObPermissions()
-        default: ShellObNickname(name: $name, focused: $nameFocused, onSubmit: finish)
+    @ViewBuilder private func page(_ p: Page) -> some View {
+        switch p {
+        case .welcome: ShellObWelcome()
+        case .features: ShellObFeatures()
+        case .vehicle: ShellObVehicle()
+        case .dimensions: ShellObDimensions()
+        case .permissions: ShellObPermissions()
+        case .nickname: ShellObNickname(name: $name, focused: $nameFocused, onSubmit: finish)
         }
     }
 
     // MARK: - Navigation
 
     private func go(_ n: Int) {
-        guard n >= 0, n < Self.count, n != step else { return }
+        guard n >= 0, n < count, n != step else { return }
         nameFocused = false
         forward = n > step
         Haptic.play("light")
         withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .timingCurve(0.23, 1, 0.32, 1, duration: 0.32)) { step = n }
     }
 
-    private func next() { step == Self.count - 1 ? finish() : go(step + 1) }
+    private func next() { step == count - 1 ? finish() : go(step + 1) }
 
     private func finish() {
         nameFocused = false
@@ -141,6 +150,8 @@ struct ShellOnboarding: View {
         withAnimation(.easeIn(duration: reduceMotion ? 0.15 : 0.26)) { leaving = true }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 150 : 260))
+            // passer l'accueil vaut choix (voiture par défaut) : la question ne revient pas en feuille
+            if !prefs.vehicleChosen { prefs.vehicleChosen = true }
             if !prefs.onboarded { prefs.onboarded = true }
             onDone()
         }
@@ -338,6 +349,54 @@ final class ShellLocationAuth: NSObject, CLLocationManagerDelegate {
             }
             self.status = s
             if s != .notDetermined { self.asking = false }
+        }
+    }
+}
+
+private struct ShellObVehicle: View {
+    @Environment(Prefs.self) private var prefs
+
+    var body: some View {
+        @Bindable var prefs = prefs
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                ShellObTitle(text: "Tu conduis quoi\u{00a0}?")
+                Text("Itinéraires, limitations de vitesse et alertes s’adaptent à ton véhicule.")
+                    .font(.osa(15, .medium)).foregroundStyle(Osa.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .shellReveal(0.2)
+                ShellVehicleKindGrid(vehicle: $prefs.vehicle) { _ in
+                    if !prefs.vehicleChosen { prefs.vehicleChosen = true }
+                }
+                .shellReveal(0.3)
+                Text("Tout se change plus tard dans les réglages.")
+                    .font(.osa(13, .medium)).foregroundStyle(Osa.faint)
+                    .shellReveal(0.4)
+            }
+            .padding(.vertical, 24)
+        }
+    }
+}
+
+private struct ShellObDimensions: View {
+    @Environment(Prefs.self) private var prefs
+
+    var body: some View {
+        @Bindable var prefs = prefs
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                ShellObTitle(text: "Ton \(prefs.vehicle.kind.label.lowercased()), en chiffres.", size: 30)
+                Text("Pré-rempli avec les valeurs habituelles : ajuste-les pour éviter ponts bas et routes limitées en tonnage.")
+                    .font(.osa(15, .medium)).foregroundStyle(Osa.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .shellReveal(0.2)
+                ShellVehicleDimensions(vehicle: $prefs.vehicle)
+                    .shellReveal(0.3)
+                if prefs.vehicle.kind == .superheavy {
+                    ShellVehicleConvoyNote().shellReveal(0.4)
+                }
+            }
+            .padding(.vertical, 24)
         }
     }
 }
