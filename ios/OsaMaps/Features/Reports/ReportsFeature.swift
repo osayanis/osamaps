@@ -88,6 +88,19 @@ private func reportsDebugLaunch() {
         case "drive":
             Core.shared.mode = .drive
         case "settings": Core.shared.settingsOpen = true
+        case "pick-detail":
+            // envoi complet (5 s) puis fiche de MON dernier signalement, dans la même session
+            reportsQuickReport(kind: value, sub: nil)
+            try? await Task.sleep(for: .seconds(8))
+            let store = ReportsStore.shared
+            if let id = store.mine.max(by: { $0.value < $1.value })?.key {
+                ReportsPanels.openOwn(ReportsPanels.detail, reportId: id)
+            }
+        case "vote-detail":
+            // vote « toujours là » puis fiche (doit afficher « Merci, c'est noté »)
+            try? await Task.sleep(for: .seconds(2))
+            await ReportsStore.shared.vote(value, .still)
+            ReportsPanels.openOwn(ReportsPanels.detail, reportId: value)
         default: break
         }
     }
