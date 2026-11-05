@@ -15,8 +15,21 @@ import CoreLocation
 ///   osamaps://alert?text=Police%20signalée&distance=800&tone=police → drive:alert de test
 @MainActor
 enum Links {
+    /// Au lancement à froid par un lien, les modules ne sont pas encore démarrés (pas d'abonnés au Bus) :
+    /// les liens reçus avant `ready()` sont mis de côté puis rejoués.
+    private static var isReady = false
+    private static var pending: [URL] = []
+
+    /// Appelé par RootView une fois tous les modules démarrés.
+    static func ready() {
+        isReady = true
+        let queued = pending; pending = []
+        queued.forEach(handle)
+    }
+
     static func handle(_ url: URL) {
         guard url.scheme == "osamaps" else { return }
+        guard isReady else { pending.append(url); return }
         let q = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         let core = Core.shared
         switch url.host() {
