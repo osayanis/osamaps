@@ -19,6 +19,9 @@ let reportsFeature = Feature(
     start: {
         ReportsStore.shared.connectRealtime()
         ReportsWatch.start()
+        #if DEBUG
+        reportsDebugLaunch()
+        #endif
         Bus.shared.on { event in
             guard case .custom(name: let name, payload: let p) = event else { return }
             switch name {
@@ -64,3 +67,29 @@ func reportsQuickReport(kind: String, sub: String?) {
         if let sub, k.subs.contains(where: { $0.id == sub }), store.pending != nil { store.toggleSub(sub) }
     }
 }
+
+#if DEBUG
+/// Tests visuels sans lien (Debug seulement) : argument de lancement
+///   -reportsOpen reports | pick:<kind> | detail:<id> | drive-ask:<id> | settings
+@MainActor
+private func reportsDebugLaunch() {
+    guard let arg = UserDefaults.standard.string(forKey: "reportsOpen") else { return }
+    Task { @MainActor in
+        try? await Task.sleep(for: .seconds(3))
+        let parts = arg.split(separator: ":", maxSplits: 1).map(String.init)
+        let value = parts.count > 1 ? parts[1] : ""
+        switch parts[0] {
+        case "reports": ReportsPanels.openOwn(ReportsPanels.panel)
+        case "pick": reportsQuickReport(kind: value, sub: nil)
+        case "detail": ReportsPanels.openOwn(ReportsPanels.detail, reportId: value)
+        case "drive-ask":
+            Core.shared.mode = .drive
+            ReportsStore.shared.setAsk(.init(id: value, at: .now))
+        case "drive":
+            Core.shared.mode = .drive
+        case "settings": Core.shared.settingsOpen = true
+        default: break
+        }
+    }
+}
+#endif
