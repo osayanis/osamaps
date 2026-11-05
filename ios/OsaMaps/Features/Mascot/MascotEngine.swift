@@ -25,6 +25,7 @@ final class MascotEngine {
         var totalDistance = 0.0
         var trips = 0
         var badges: [String: Date] = [:]
+        /// Anciens accessoires (avant l'éditeur) : lus une fois pour la première apparence, voir MascotLookStore.
         var equipped: [MascotAccessory] = []
         var history: [MascotTrip] = []
         var reports = 0
@@ -96,15 +97,6 @@ final class MascotEngine {
     var settings: Settings { saved.settings }
     var weekPoints: Int { saved.week.key == Self.weekKey() ? saved.week.points : 0 }
 
-    /// Accessoires portés ET encore débloqués.
-    var worn: [MascotAccessory] { saved.equipped.filter(isUnlocked) }
-
-    func isUnlocked(_ id: MascotAccessory) -> Bool {
-        guard let a = MascotData.accessory(id) else { return false }
-        if let b = a.badge { return saved.badges[b] != nil }
-        return level.level >= (a.level ?? 99)
-    }
-
     /// Animations : réglage de la mascotte ET « Réduire les animations » du système.
     var animated: Bool { saved.settings.animations && !UIAccessibility.isReduceMotionEnabled }
 
@@ -125,15 +117,6 @@ final class MascotEngine {
         var l = live
         f(&l)
         if l != live { live = l }
-    }
-
-    /// Met / enlève un accessoire (un seul par emplacement).
-    func toggleAccessory(_ id: MascotAccessory) {
-        guard isUnlocked(id), let def = MascotData.accessory(id) else { return }
-        patch { s in
-            if s.equipped.contains(id) { s.equipped.removeAll { $0 == id } }
-            else { s.equipped = s.equipped.filter { MascotData.accessory($0)?.spot != def.spot } + [id] }
-        }
     }
 
     func setSetting(_ f: (inout Settings) -> Void) {
@@ -415,7 +398,7 @@ final class MascotEngine {
     }
 
     /// Tests dans le Simulateur sans dépendre des liens : argument de lancement
-    /// `-mascotTest "reset;points=800;wear=casquette;wait=2;profile"` (étapes séparées par « ; »).
+    /// `-mascotTest "reset;points=800;look=hat:beret,body:menthe;wait=2;editor"` (étapes séparées par « ; »).
     private func runLaunchScript() {
         guard let script = UserDefaults.standard.string(forKey: "mascotTest"), !script.isEmpty else { return }
         Task {
@@ -426,6 +409,8 @@ final class MascotEngine {
                 switch cmd {
                 case "wait": try? await Task.sleep(for: .seconds(Double(arg) ?? 1))
                 case "profile": Core.shared.openPanel("profile")
+                case "editor": Core.shared.openPanel("mascot-editor")
+                case "look": handleTestLink("osamaps://mascot/look?" + arg.replacingOccurrences(of: ",", with: "&").replacingOccurrences(of: ":", with: "="))
                 case "settings": Core.shared.settingsOpen = true
                 case "testdrive": testDrive()
                 case "points": handleTestLink("osamaps://mascot/points?n=\(arg)")
@@ -499,7 +484,8 @@ final class MascotEngine {
         }
     }
 
-    /// Liens de test : osamaps://mascot/demo-trip | sleep | poke | points?n=500 | wear?id=casquette | reset
+    /// Liens de test : osamaps://mascot/demo-trip | sleep | poke | points?n=500 | reset
+    /// | look?body=menthe&hat=beret&glasses=rondes&face=rieur&neck=bandana&ride=rouge&name=Bob | random
     private func handleTestLink(_ s: String) {
         guard let u = URLComponents(string: s), u.host == "mascot" else { return }
         let q = Dictionary((u.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
@@ -509,8 +495,18 @@ final class MascotEngine {
         case "poke": poke()
         case "alert": react(.excited, .rest, seconds: 1.6)
         case "points": addPoints(Int(q["n"] ?? "") ?? 100); if !driving { checkBadges() }
-        case "wear": if let a = MascotAccessory(rawValue: q["id"] ?? "") { toggleAccessory(a) }
-        case "reset": saved = Saved(); persist()
+        case "look":
+            MascotLookStore.shared.update { l in
+                if let v = q["body"].flatMap(MascotLook.Body.init(rawValue:)) { l.body = v }
+                if let v = q["hat"].flatMap(MascotLook.Hat.init(rawValue:)) { l.hat = v }
+                if let v = q["glasses"].flatMap(MascotLook.Glasses.init(rawValue:)) { l.glasses = v }
+                if let v = q["face"].flatMap(MascotLook.Face.init(rawValue:)) { l.face = v }
+                if let v = q["neck"].flatMap(MascotLook.Neck.init(rawValue:)) { l.neck = v }
+                if let v = q["ride"].flatMap(MascotLook.Ride.init(rawValue:)) { l.ride = v }
+                if let v = q["name"] { l.name = v }
+            }
+        case "random": MascotLookStore.shared.randomize()
+        case "reset": saved = Saved(); persist(); MascotLookStore.shared.update { $0 = .standard }
         default: break
         }
     }

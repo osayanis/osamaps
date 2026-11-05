@@ -1,6 +1,6 @@
 import Foundation
 
-/// Données fixes de la mascotte : niveaux, badges, accessoires, barème de points
+/// Données fixes de la mascotte : niveaux, badges, barème de points (l'apparence : MascotLook.swift)
 /// (identiques à `web/src/features/mascot/data.ts`).
 enum MascotData {
     struct Level { var min: Int; var name: String }
@@ -47,27 +47,6 @@ enum MascotData {
 
     static func badge(_ id: String) -> Badge? { badges.first { $0.id == id } }
 
-    enum Spot: String { case tete, visage, cou }
-
-    struct AccessoryDef: Identifiable { var id: MascotAccessory; var name: String; var spot: Spot; var level: Int?; var badge: String? }
-
-    /// Débloqués par un niveau ou un badge ; un seul par emplacement (tête, visage, cou).
-    static let accessories: [AccessoryDef] = [
-        .init(id: .casquette, name: "Casquette", spot: .tete, level: 2),
-        .init(id: .lunettes, name: "Lunettes de soleil", spot: .visage, level: 3),
-        .init(id: .echarpe, name: "Écharpe", spot: .cou, level: 4),
-        .init(id: .bonnet, name: "Bonnet", spot: .tete, badge: "nuit"),
-        .init(id: .noeud, name: "Nœud papillon", spot: .cou, level: 6),
-        .init(id: .couronne, name: "Couronne", spot: .tete, level: 8),
-    ]
-
-    static func accessory(_ id: MascotAccessory) -> AccessoryDef? { accessories.first { $0.id == id } }
-
-    static func unlockText(_ a: AccessoryDef) -> String {
-        if let b = a.badge { return badge(b)?.name ?? b }
-        return "Niveau \(a.level ?? 0)"
-    }
-
     /// Barème.
     static let perKm = 1
     static let arrived = 20
@@ -87,6 +66,7 @@ enum MascotData {
     static func kmh(_ v: Double) -> String { "\(Int(v.rounded())) km/h" }
 }
 
+/// Anciens accessoires (avant l'éditeur d'apparence) : gardés pour relire les anciennes sauvegardes.
 enum MascotAccessory: String, Codable, CaseIterable, Sendable {
     case casquette, bonnet, couronne, lunettes, echarpe, noeud
 }

@@ -13,6 +13,8 @@ struct MascotSheet: View {
                 MascotTripSummary(trip: trip).id(core.panelVersion)
             } else if core.panel == "profile" {
                 MascotProfile()
+            } else if core.panel == "mascot-editor" {
+                MascotEditor()
             }
         }
         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -22,7 +24,7 @@ struct MascotSheet: View {
 
 // MARK: - Habillage commun
 
-private struct MascotSheetChrome: ViewModifier {
+struct MascotSheetChrome: ViewModifier {
     func body(content: Content) -> some View {
         let shape = UnevenRoundedRectangle(topLeadingRadius: Osa.radiusL, topTrailingRadius: Osa.radiusL, style: .continuous)
         content
@@ -40,17 +42,17 @@ private struct MascotSheetChrome: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func mascotSheet() -> some View { modifier(MascotSheetChrome()) }
 }
 
-private struct MascotGrabber: View {
+struct MascotGrabber: View {
     var body: some View {
         Capsule().fill(Osa.lineHi).frame(width: 36, height: 5).frame(maxWidth: .infinity).accessibilityHidden(true)
     }
 }
 
-private struct MascotEyebrow: View {
+struct MascotEyebrow: View {
     var text: String
     init(_ text: String) { self.text = text }
     var body: some View {
@@ -106,7 +108,7 @@ struct MascotTripSummary: View {
         VStack(alignment: .leading, spacing: 14) {
             MascotGrabber()
             HStack(spacing: 12) {
-                MascotFigure(mood: .happy, arms: .up, size: 74, hop: hop, accessories: m.worn, animated: m.settings.animations)
+                MascotFigure(mood: .happy, arms: .up, size: 74, hop: hop, style: MascotLookStore.shared.shown, animated: m.settings.animations)
                     .frame(width: 96, height: 80)
                 VStack(alignment: .leading, spacing: 2) {
                     MascotEyebrow("Résumé du trajet")
@@ -207,14 +209,22 @@ struct MascotProfile: View {
         VStack(alignment: .leading, spacing: 14) {
             MascotGrabber()
             HStack(alignment: .center, spacing: 12) {
-                Button { hop += 1; m.poke(); Haptic.play("light") } label: {
-                    MascotFigure(size: 64, hop: hop, accessories: m.worn, animated: m.settings.animations)
+                Button { core.openPanel("mascot-editor"); Haptic.play("light") } label: {
+                    MascotFigure(size: 64, hop: hop, style: MascotLookStore.shared.shown, animated: m.settings.animations)
                         .frame(width: 84, height: 72)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "paintbrush.pointed.fill")
+                                .font(.system(size: 11, weight: .bold)).foregroundStyle(.black)
+                                .frame(width: 26, height: 26)
+                                .background(Osa.text, in: Circle())
+                                .overlay(Circle().strokeBorder(Osa.bg, lineWidth: 2))
+                                .offset(x: -2, y: -2)
+                        }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Caresser la mascotte")
+                .buttonStyle(MascotPressStyle())
+                .accessibilityLabel("Personnaliser \(MascotLookStore.shared.look.displayName)")
                 VStack(alignment: .leading, spacing: 6) {
-                    MascotEyebrow("Niveau \(lvl.level)")
+                    MascotEyebrow("\(MascotLookStore.shared.look.displayName) · Niveau \(lvl.level)")
                     Text(lvl.name).font(.osa(20, .bold)).foregroundStyle(Osa.text).lineLimit(1).minimumScaleFactor(0.8)
                     MascotBar(progress: lvl.progress)
                     Text(lvl.next.map { "\(MascotData.nf(s.points)) pts · encore \(MascotData.nf($0 - s.points)) pour le niveau \(lvl.level + 1)" }
@@ -245,7 +255,6 @@ struct MascotProfile: View {
                 VStack(alignment: .leading, spacing: 14) {
                     switch tab {
                     case "trajets": history(s.history)
-                    case "style": styles(m)
                     default: badges(s.badges)
                     }
                     if m.settings.leaderboard, let board, !board.top.isEmpty { leaderboard(board) }
@@ -279,7 +288,7 @@ struct MascotProfile: View {
 
     private func tabs(badges: Int) -> some View {
         HStack(spacing: 4) {
-            ForEach([("badges", "Badges \(badges)/\(MascotData.badges.count)"), ("trajets", "Trajets"), ("style", "Style")], id: \.0) { id, label in
+            ForEach([("badges", "Badges \(badges)/\(MascotData.badges.count)"), ("trajets", "Trajets")], id: \.0) { id, label in
                 Button { withAnimation(.easeOut(duration: 0.16)) { tab = id } } label: {
                     Text(label).font(.osa(14, .semibold))
                         .foregroundStyle(tab == id ? Color.black : Osa.dim)
@@ -350,35 +359,6 @@ struct MascotProfile: View {
         }
     }
 
-    private func styles(_ m: MascotEngine) -> some View {
-        LazyVGrid(columns: grid, spacing: 8) {
-            ForEach(MascotData.accessories) { a in
-                let ok = m.isUnlocked(a.id)
-                let on = m.worn.contains(a.id)
-                Button { m.toggleAccessory(a.id); Haptic.play("light") } label: {
-                    VStack(spacing: 4) {
-                        MascotFigure(size: 44, accessories: [a.id], blinks: false, head: true, animated: false)
-                            .opacity(ok ? 1 : 0.35).grayscale(ok ? 0 : 1)
-                        Text(a.name).font(.osa(13, .semibold)).foregroundStyle(ok ? Osa.text : Osa.dim).lineLimit(1).minimumScaleFactor(0.8)
-                        HStack(spacing: 4) {
-                            if !ok { Image(systemName: "lock.fill").font(.system(size: 9, weight: .bold)) }
-                            Text(ok ? (on ? "Porté" : "Mettre") : MascotData.unlockText(a)).lineLimit(1).minimumScaleFactor(0.8)
-                        }
-                        .font(.osa(11, on ? .bold : .medium)).foregroundStyle(on ? Osa.text : Osa.dim)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 6).padding(.vertical, 10)
-                    .background(on ? Osa.surfaceHi : Osa.surface, in: RoundedRectangle(cornerRadius: Osa.radiusS, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Osa.radiusS, style: .continuous).strokeBorder(on ? Osa.text : Osa.line))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(MascotPressStyle())
-                .disabled(!ok)
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-    }
-
     private func leaderboard(_ b: MascotBoard.Board) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             MascotEyebrow("Classement de la semaine")
@@ -421,7 +401,7 @@ struct MascotRailButton: View {
         let open = core.panel == "profile"
         if core.mode != .drive {
             Button { core.openPanel(open ? nil : "profile"); Haptic.play("light") } label: {
-                MascotFigure(mood: m.live.sleeping ? .sleepy : .calm, size: 34, accessories: m.worn, head: true, animated: m.settings.animations)
+                MascotFigure(mood: m.live.sleeping ? .sleepy : .calm, size: 34, style: MascotLookStore.shared.shown, head: true, animated: m.settings.animations)
                     .offset(y: 3)
                     .frame(width: 48, height: 48)
                     .clipShape(Circle())
@@ -436,40 +416,33 @@ struct MascotRailButton: View {
 
 // MARK: - Réglages
 
-/// Section « Mascotte » des réglages : accessoires portés, animations, messages, classement.
+/// Section « Mascotte » des réglages : accès à l'éditeur, animations, messages, classement.
 struct MascotSettingsSection: View {
     @Environment(Core.self) private var core
 
     var body: some View {
         let m = MascotEngine.shared
-        let unlocked = MascotData.accessories.filter { m.isUnlocked($0.id) }
+        let look = MascotLookStore.shared
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                MascotFigure(size: 40, accessories: m.worn, head: true, animated: m.settings.animations)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Mascotte").font(.osa(17, .bold)).foregroundStyle(Osa.text)
-                    Text("Elle te représente sur la carte.").font(.osa(13, .medium)).foregroundStyle(Osa.dim)
+            Button {
+                core.settingsOpen = false
+                core.openPanel("mascot-editor")
+            } label: {
+                HStack(spacing: 12) {
+                    MascotFigure(size: 44, style: look.shown, head: true, animated: m.settings.animations)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(look.look.displayName).font(.osa(17, .bold)).foregroundStyle(Osa.text)
+                        Text("Ta mascotte te représente sur la carte.").font(.osa(13, .medium)).foregroundStyle(Osa.dim)
+                    }
+                    Spacer(minLength: 8)
+                    Text("Personnaliser").font(.osa(14, .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 14).frame(minHeight: 36)
+                        .background(Osa.text, in: Capsule())
                 }
+                .contentShape(Rectangle())
             }
-            .padding(.bottom, 10)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Accessoires").font(.osa(15, .semibold)).foregroundStyle(Osa.text)
-                if unlocked.isEmpty {
-                    Text("Le premier se débloque au niveau 2.").font(.osa(13, .medium)).foregroundStyle(Osa.dim)
-                } else {
-                    MascotChips(items: unlocked.map { ($0.id, $0.name) }, isOn: { m.worn.contains($0) }, toggle: { m.toggleAccessory($0) })
-                }
-                Button("Voir tous les accessoires") {
-                    core.settingsOpen = false
-                    core.openPanel("profile")
-                }
-                .font(.osa(13, .semibold)).foregroundStyle(Osa.dim)
-                .frame(minHeight: 32)
-            }
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .top) { Rectangle().fill(Osa.line).frame(height: 1) }
+            .buttonStyle(MascotPressStyle())
+            .padding(.bottom, 12)
 
             toggle("Animations", hint: "Rebond, clignements, petits sauts", on: m.settings.animations) { v in m.setSetting { $0.animations = v } }
             toggle("Messages de la mascotte", hint: "Rares, jamais pendant une manœuvre", on: m.settings.talk) { v in m.setSetting { $0.talk = v } }
@@ -494,58 +467,5 @@ struct MascotSettingsSection: View {
         .tint(Osa.ok)
         .padding(.vertical, 10)
         .overlay(alignment: .top) { Rectangle().fill(Osa.line).frame(height: 1) }
-    }
-}
-
-/// Pastilles à bascule (accessoires débloqués), passent à la ligne.
-private struct MascotChips: View {
-    var items: [(MascotAccessory, String)]
-    var isOn: (MascotAccessory) -> Bool
-    var toggle: (MascotAccessory) -> Void
-
-    var body: some View {
-        MascotFlow(spacing: 6) {
-            ForEach(items, id: \.0) { id, name in
-                let on = isOn(id)
-                Button { toggle(id) } label: {
-                    Text(name).font(.osa(14, .semibold))
-                        .foregroundStyle(on ? Color.black : Osa.text)
-                        .padding(.horizontal, 14).frame(minHeight: 38)
-                        .background(on ? AnyShapeStyle(Osa.text) : AnyShapeStyle(Color.clear), in: Capsule())
-                        .overlay(Capsule().strokeBorder(on ? Color.clear : Osa.lineHi))
-                }
-                .buttonStyle(MascotPressStyle())
-                .accessibilityAddTraits(on ? .isSelected : [])
-            }
-        }
-    }
-}
-
-/// Mise en page qui passe à la ligne.
-private struct MascotFlow: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxW = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0, width: CGFloat = 0
-        for s in subviews {
-            let sz = s.sizeThatFits(.unspecified)
-            if x > 0 && x + sz.width > maxW { x = 0; y += row + spacing; row = 0 }
-            x += sz.width + spacing
-            row = max(row, sz.height)
-            width = max(width, x - spacing)
-        }
-        return CGSize(width: width, height: y + row)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
-        for s in subviews {
-            let sz = s.sizeThatFits(.unspecified)
-            if x > bounds.minX && x + sz.width > bounds.maxX { x = bounds.minX; y += row + spacing; row = 0 }
-            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(sz))
-            x += sz.width + spacing
-            row = max(row, sz.height)
-        }
     }
 }
