@@ -5,4 +5,5 @@ let allFeatures: [Feature] = [
     searchFeature,
     routingFeature,
     alongFeature,
+    safetyFeature,
 ]
