@@ -290,11 +290,14 @@ final class SearchState {
     func fly(to c: CLLocationCoordinate2D) {
         guard let map = core.map else { return }
         core.follow = false
+        // les marges du mode suivi (bas = panneau) s'ajouteraient aux nôtres
+        map.layoutMargins = .zero
         let currentSpan = map.region.span.latitudeDelta * 111_000
         let meters = min(max(currentSpan, 600), 2500)
         let region = MKCoordinateRegion(center: c, latitudinalMeters: meters, longitudinalMeters: meters)
-        let bottom = max(core.sheetHeight, 300) + 20
-        map.setVisibleMapRect(Self.rect(region), edgePadding: UIEdgeInsets(top: 110, left: 30, bottom: bottom, right: 30), animated: true)
+        let h = map.bounds.height
+        let bottom = min(max(core.sheetHeight, 300) + 20, h * 0.55)
+        map.setVisibleMapRect(Self.rect(region), edgePadding: UIEdgeInsets(top: min(110, h * 0.16), left: 30, bottom: bottom, right: 30), animated: true)
     }
 
     private func fitResults(center: CLLocationCoordinate2D, _ coords: [CLLocationCoordinate2D]) {
@@ -303,14 +306,18 @@ final class SearchState {
         let pts = [center] + coords.prefix(8)
         guard let map = core.map else { return }
         core.follow = false
+        map.layoutMargins = .zero
         var rect = MKMapRect.null
         for p in pts { rect = rect.union(MKMapRect(origin: MKMapPoint(p), size: MKMapSize(width: 1, height: 1))) }
         let minSize = 1200 * MKMapPointsPerMeterAtLatitude(center.latitude)
         if rect.size.width < minSize { rect = rect.insetBy(dx: -(minSize - rect.size.width) / 2, dy: 0) }
         if rect.size.height < minSize { rect = rect.insetBy(dx: 0, dy: -(minSize - rect.size.height) / 2) }
         // le panneau grandit quand la liste arrive : on prévoit sa hauteur finale ; en haut, barre + puces
-        let bottom = max(core.sheetHeight, 420) + 24
-        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 190, left: 40, bottom: bottom, right: 60), animated: true)
+        // marges plafonnées : sur un petit écran, il doit rester au moins ~20 % de carte pour les résultats
+        let h = map.bounds.height
+        let top = min(190, h * 0.26)
+        let bottom = min(max(core.sheetHeight, 420) + 24, h * 0.54)
+        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: top, left: 40, bottom: bottom, right: 60), animated: true)
     }
 
     static func rect(_ r: MKCoordinateRegion) -> MKMapRect {

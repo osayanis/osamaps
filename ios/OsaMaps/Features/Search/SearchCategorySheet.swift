@@ -68,7 +68,7 @@ struct SearchCategorySheet: View {
             SearchHint(text: "Aucun résultat « \(cat.label.lowercased()) » dans un rayon de \(Int(cat.maxKm)) km.")
         } else {
             let ref = core.position?.coordinate ?? s.center
-            SearchFitScroll(maxHeight: 300) {
+            SearchFitScroll(maxHeight: min(300, (Core.shared.map?.bounds.height ?? 800) * 0.3)) {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(s.results.enumerated()), id: \.element.id) { i, r in
                         SearchRow(symbol: cat.symbol, title: r.name, subtitle: r.detail.isEmpty ? r.typeLabel : r.detail,
