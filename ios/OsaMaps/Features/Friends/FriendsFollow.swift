@@ -141,7 +141,7 @@ enum FriendsFollowLayer {
                     let v = m.dequeueReusableAnnotationView(withIdentifier: "friends.follow.car") ?? MKAnnotationView(annotation: c, reuseIdentifier: "friends.follow.car")
                     v.annotation = c
                     v.image = carImage(arrived: c.arrived)
-                    v.transform = CGAffineTransform(rotationAngle: CGFloat((c.heading - m.camera.heading) * .pi / 180))
+                    v.transform = rotation(c, m)
                     v.displayPriority = .required
                     return v
                 }
@@ -159,7 +159,7 @@ enum FriendsFollowLayer {
                 return nil
             },
             regionDidChange: { m in
-                if let c = car { m.view(for: c)?.transform = CGAffineTransform(rotationAngle: CGFloat((c.heading - m.camera.heading) * .pi / 180)) }
+                if let c = car { m.view(for: c)?.transform = rotation(c, m) }
                 // la carte a bougé sans nous : l'utilisateur regarde ailleurs, on arrête de recadrer
                 if FriendsFollow.shared.token != nil, Date() > fittingUntil, !Core.shared.follow { FriendsFollow.shared.autoCam = false }
             }
@@ -201,7 +201,7 @@ enum FriendsFollowLayer {
                 let reduce = UIAccessibility.isReduceMotionEnabled
                 UIView.animate(withDuration: reduce ? 0 : 1.9, delay: 0, options: [.curveLinear, .beginFromCurrentState]) {
                     c.coordinate = p
-                    map.view(for: c)?.transform = CGAffineTransform(rotationAngle: CGFloat((c.heading - map.camera.heading) * .pi / 180))
+                    map.view(for: c)?.transform = rotation(c, map)
                 }
                 if arrivedChanged { map.view(for: c)?.image = carImage(arrived: c.arrived) }
             } else {
@@ -216,10 +216,20 @@ enum FriendsFollowLayer {
         if fit {
             var pts = line + [t.dest]
             if let p = t.pos { pts.append(p) }
-            if pts.count == 1 { let c = pts[0]; pts = [.init(latitude: c.latitude - 0.004, longitude: c.longitude - 0.004), .init(latitude: c.latitude + 0.004, longitude: c.longitude + 0.004)] }
+            // un seul point (ou tous confondus, à l'arrivée) : on cadre un quartier, pas un immeuble
+            let lats = pts.map(\.latitude), lngs = pts.map(\.longitude)
+            if (lats.max()! - lats.min()!) < 0.004 && (lngs.max()! - lngs.min()!) < 0.004 {
+                let c = pts[0]
+                pts = [.init(latitude: c.latitude - 0.006, longitude: c.longitude - 0.006), .init(latitude: c.latitude + 0.006, longitude: c.longitude + 0.006)]
+            }
             fittingUntil = Date().addingTimeInterval(2.5)
             MapHub.fit(pts, animated: true, extraTop: 20)
         }
+    }
+
+    /// La flèche suit le cap ; la coche d'arrivée reste droite.
+    private static func rotation(_ c: FriendsFollowCar, _ m: MKMapView) -> CGAffineTransform {
+        c.arrived ? .identity : CGAffineTransform(rotationAngle: CGFloat((c.heading - m.camera.heading) * .pi / 180))
     }
 
     /// Flèche blanche cerclée (vert quand il est arrivé).
@@ -234,9 +244,11 @@ enum FriendsFollowLayer {
             let fill = arrived ? UIColor(red: 0.204, green: 0.78, blue: 0.349, alpha: 1) : UIColor.white
             fill.setFill()
             if arrived {
-                let check = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))?
-                    .withTintColor(fill, renderingMode: .alwaysOriginal)
-                check?.draw(in: CGRect(x: 11, y: 12, width: 18, height: 16))
+                if let check = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .heavy))?
+                    .withTintColor(fill, renderingMode: .alwaysOriginal) {
+                    let sz = check.size
+                    check.draw(in: CGRect(x: 20 - sz.width / 2, y: 20 - sz.height / 2, width: sz.width, height: sz.height))
+                }
             } else {
                 let p = UIBezierPath()
                 p.move(to: CGPoint(x: 20, y: 9))

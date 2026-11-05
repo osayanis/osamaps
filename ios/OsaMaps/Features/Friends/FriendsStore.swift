@@ -433,6 +433,19 @@ final class FriendsStore {
         case "friends-test":
             if path.first == "fiche", let f = friends.first(where: { $0.code == q["code"] }) {
                 Core.shared.openPanel("friend", data: f.pid)
+            } else if path.first == "drive" {
+                // itinéraire factice Moulins → Vichy (le module routing n'est pas sur cette branche)
+                let a = CLLocationCoordinate2D(latitude: 46.5646, longitude: 3.3332), b = CLLocationCoordinate2D(latitude: 46.1278, longitude: 3.4258)
+                let coords = (0...200).map { i -> Coord in
+                    let t = Double(i) / 200
+                    return Coord(lat: a.latitude + (b.latitude - a.latitude) * t, lng: a.longitude + (b.longitude - a.longitude) * t)
+                }
+                let r = Route(id: "friends-test", coords: coords, distance: 48_500, duration: 2_700, maneuvers: [])
+                let c = Core.shared
+                c.destination = Place(name: "Vichy", coordinate: b)
+                c.routes = [r]; c.activeRoute = 0
+                c.mode = .drive; c.follow = true
+                emit(.driveStart(routeId: r.id))
             } else if path.first == "share" {
                 Task {
                     guard let t = await startTrip() else { return }
