@@ -1,12 +1,13 @@
 import json, re, subprocess, sys, time, shlex
 
 out, app, *rest = sys.argv[1:]
-steps, args, wait = [], [], 6.0
+steps, args, wait, reboot = [], [], 6.0, False
 for a in rest:
     if a.startswith("--args="): args = shlex.split(a[7:])
     elif a.startswith("--wait="): wait = float(a[7:])
     elif a.startswith("--url="): steps.append(("url", a[6:]))
     elif a.startswith("--then="): steps.append(("sleep", float(a[7:])))
+    elif a == "--reboot": reboot = True
 
 def sh(*c, check=True, timeout=180):
     return subprocess.run(c, check=check, capture_output=True, text=True, timeout=timeout).stdout
@@ -26,6 +27,8 @@ if not dev:
     udid = sh("xcrun", "simctl", "create", "OsaMaps-Test", tid, rt["identifier"]).strip()
 else:
     udid = dev["udid"]
+# --reboot : efface une alerte système restée affichée (ex. « Ouvrir dans OsaMaps ? » d'un ancien openurl)
+if reboot: sh("xcrun", "simctl", "shutdown", udid, check=False, timeout=120)
 sh("xcrun", "simctl", "boot", udid, check=False)
 sh("xcrun", "simctl", "bootstatus", udid, "-b", timeout=300)
 sh("xcrun", "simctl", "status_bar", udid, "override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "100", check=False)

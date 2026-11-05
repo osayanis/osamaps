@@ -43,7 +43,11 @@ struct MapLayer {
 @MainActor
 enum MapHub {
     /// Cadre la carte sur des coordonnées en tenant compte du panneau du bas et de la barre du haut.
-    static func fit(_ coords: [CLLocationCoordinate2D], animated: Bool = true, extraTop: CGFloat = 0) {
+    /// - top : marge haute (90 pt = sous la barre de recherche ; en aperçu il n'y en a pas, 50 suffit).
+    /// Sur petit écran, les panneaux peuvent couvrir presque toute la carte : les marges sont plafonnées
+    /// pour laisser au moins 35 % de la hauteur au tracé (le panneau le recouvre un peu plutôt que de
+    /// dézoomer sur tout le pays).
+    static func fit(_ coords: [CLLocationCoordinate2D], animated: Bool = true, extraTop: CGFloat = 0, top: CGFloat? = nil) {
         guard let map = Core.shared.map, !coords.isEmpty else { return }
         Core.shared.follow = false
         // la vue de conduite (inclinée, orientée, marge haute) fausserait le cadrage : on la remet à plat
@@ -54,7 +58,15 @@ enum MapHub {
             map.setCamera(cam, animated: false)
         }
         let line = MKPolyline(coordinates: coords, count: coords.count)
-        let pad = UIEdgeInsets(top: 90 + extraTop, left: 40, bottom: Core.shared.sheetHeight + 30, right: 70)
+        let h = map.bounds.height
+        var topPad = (top ?? (Core.shared.mode == .browse ? 90 : 50)) + extraTop
+        var bottomPad = Core.shared.sheetHeight + 30
+        let maxPads = h * 0.65
+        if topPad + bottomPad > maxPads, h > 0 {
+            let k = maxPads / (topPad + bottomPad)
+            topPad *= k; bottomPad *= k
+        }
+        let pad = UIEdgeInsets(top: topPad, left: 40, bottom: bottomPad, right: 70)
         map.setVisibleMapRect(line.boundingMapRect, edgePadding: pad, animated: animated)
     }
 }
