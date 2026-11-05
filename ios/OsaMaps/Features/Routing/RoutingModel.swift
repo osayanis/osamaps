@@ -68,6 +68,8 @@ final class RoutingModel {
                 self.stopDrive()
             case .routeAddStop(let place):
                 self.addStop(place)
+            case .custom(name: "url", let payload):
+                if let u = payload["url"].flatMap(URL.init(string:)), u.host() == "routing" { self.handleLink(u) }
             default:
                 break
             }
@@ -91,6 +93,35 @@ final class RoutingModel {
         RoutingObserve.watch({ Core.shared.position != nil }) { [weak self] has in
             guard let self, has, self.core.mode == .preview, self.status == .error, self.retryable else { return }
             self.computePreview()
+        }
+    }
+
+    /// Liens de test / de partage propres au module (osamaps://routing/…) :
+    ///   osamaps://routing/stop?name=Varennes&lat=46.3133&lng=3.4003   ajoute une étape
+    ///   osamaps://routing/section/stops   |   osamaps://routing/section/depart   ouvre un sous-panneau
+    ///   osamaps://routing/depart?type=1&in=30                           partir (1) / arriver (2) dans 30 min
+    ///   osamaps://routing/select?i=1                                    choisit une alternative
+    ///   osamaps://routing/recompute                                     recalcul depuis la position (conduite)
+    private func handleLink(_ u: URL) {
+        let q = Dictionary((URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") },
+                           uniquingKeysWith: { a, _ in a })
+        let parts = u.pathComponents.filter { $0 != "/" }
+        switch parts.first {
+        case "stop":
+            guard let lat = Double(q["lat"] ?? ""), let lng = Double(q["lng"] ?? "") else { return }
+            addStop(Self.stopPlace(name: q["name"] ?? "Étape", coordinate: .init(latitude: lat, longitude: lng)))
+        case "section":
+            section = parts.dropFirst().first == "depart" ? .depart : parts.dropFirst().first == "stops" ? .stops : nil
+        case "depart":
+            let minutes = Double(q["in"] ?? "") ?? 30
+            setDepart(RoutingDepart(type: q["type"] == "2" ? 2 : 1, value: RoutingTime.stamp(Date().addingTimeInterval(minutes * 60))))
+        case "select":
+            selectRoute(Int(q["i"] ?? "") ?? 0)
+        case "recompute":
+            // même chemin que `.routeRecompute(from:)` envoyé par le guidage
+            if let p = core.position { emit(.routeRecompute(from: p.coordinate)) }
+        default:
+            break
         }
     }
 

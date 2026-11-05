@@ -16,27 +16,33 @@ private struct RoutingPreviewSheet: View {
     @Environment(Prefs.self) private var prefs
     @State private var model = RoutingModel.shared
     @State private var bodyHeight: CGFloat = 0
+    /// Hauteur de l'écran : la zone des cartes ne doit jamais manger la carte (petits iPhone).
+    @State private var screenHeight: CGFloat = 800
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var anim: Animation? { reduceMotion ? nil : Osa.anim }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Capsule().fill(Osa.lineHi).frame(width: 36, height: 5).frame(maxWidth: .infinity).padding(.top, 2)
+        VStack(alignment: .leading, spacing: 12) {
+            Capsule().fill(Osa.lineHi).frame(width: 36, height: 5).frame(maxWidth: .infinity)
             header
             ScrollView {
                 content
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { bodyHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(bodyHeight, 330))
+            .frame(height: min(bodyHeight, max(130, min(330, screenHeight * 0.34))))
             chips
             goButton
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .osaGlass()
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
+        .onAppear {
+            if let h = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height { screenHeight = h }
+        }
         .animation(anim, value: model.section)
         .animation(anim, value: core.routes.map(\.id))
         .animation(anim, value: model.status)
@@ -51,7 +57,7 @@ private struct RoutingPreviewSheet: View {
                     .font(.osa(13, .semibold))
                     .foregroundStyle(Osa.dim)
                 Text(core.destination?.name ?? "Destination")
-                    .font(.osa(22, .bold))
+                    .font(.osa(20, .bold))
                     .foregroundStyle(Osa.text)
                     .lineLimit(2)
             }
@@ -89,8 +95,9 @@ private struct RoutingPreviewSheet: View {
             }
             if !core.routes.isEmpty {
                 let fastest = core.routes.map(\.duration).min() ?? 0
-                VStack(spacing: 8) {
-                    ForEach(Array(core.routes.enumerated()), id: \.element.id) { i, r in
+                VStack(spacing: 6) {
+                    // sous-panneau ouvert : seul l'itinéraire choisi reste visible (la carte garde de la place)
+                    ForEach(Array(core.routes.enumerated()).filter { model.section == nil || $0.offset == core.activeRoute }, id: \.element.id) { i, r in
                         RoutingRouteCard(route: r, active: i == core.activeRoute, fastest: fastest,
                                          multiple: core.routes.count > 1, meta: model.meta[r.id], depart: model.depart) {
                             model.selectRoute(i)
@@ -98,7 +105,9 @@ private struct RoutingPreviewSheet: View {
                     }
                 }
                 .opacity(model.status == .loading ? 0.5 : 1)
-                if model.depart != nil && core.routes.count == 1 {
+                if model.section != nil {
+                    EmptyView()
+                } else if model.depart != nil && core.routes.count == 1 {
                     note("Avec une heure choisie, une seule proposition est calculée.")
                 } else if !model.stops.isEmpty && core.routes.count == 1 {
                     note("Avec des étapes, une seule proposition est calculée.")
@@ -175,10 +184,10 @@ private struct RoutingRouteCard: View {
         let delta = route.duration - fastest
         let isFastest = multiple && delta < 30
         Button(action: select) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(Geo.formatDuration(route.duration))
-                        .font(.osa(22, .bold))
+                        .font(.osa(20, .bold))
                         .monospacedDigit()
                         .foregroundStyle(Osa.text)
                     if isFastest {
@@ -198,12 +207,12 @@ private struct RoutingRouteCard: View {
                     if route.hasFerry { tag("Ferry", "ferry") }
                 }
                 Text(subtitle)
-                    .font(.osa(14, .medium))
+                    .font(.osa(13, .medium))
                     .foregroundStyle(Osa.dim)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
+            .padding(.horizontal, 14).padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(active ? Osa.surfaceHi : Osa.surface, in: RoundedRectangle(cornerRadius: Osa.radiusM, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Osa.radiusM, style: .continuous)
@@ -335,21 +344,27 @@ private struct RoutingDepartPanel: View {
             .padding(3)
             .background(Osa.surface, in: Capsule())
 
-            HStack(spacing: 6) {
-                mini("Maintenant", on: model.depart == nil) { model.setDepart(nil) }
-                ForEach([15, 30, 60], id: \.self) { m in
-                    mini(m < 60 ? "+\(m) min" : "+1 h", on: false) {
-                        date = Date().addingTimeInterval(Double(m) * 60)
-                        apply()
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    mini("Maintenant", on: model.depart == nil) { model.setDepart(nil) }
+                    ForEach([15, 30, 60], id: \.self) { m in
+                        mini(m < 60 ? "+\(m) min" : "+1 h", on: false) {
+                            date = Date().addingTimeInterval(Double(m) * 60)
+                            apply()
+                        }
                     }
                 }
             }
 
-            DatePicker(type == 1 ? "Heure de départ" : "Heure d'arrivée souhaitée", selection: $date,
-                       in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                .font(.osa(15, .semibold))
-                .foregroundStyle(Osa.text)
-                .environment(\.locale, Locale(identifier: "fr_FR"))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(type == 1 ? "Heure de départ" : "Heure d'arrivée souhaitée")
+                    .font(.osa(13, .semibold))
+                    .foregroundStyle(Osa.dim)
+                DatePicker(type == 1 ? "Heure de départ" : "Heure d'arrivée souhaitée", selection: $date,
+                           in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                    .environment(\.locale, Locale(identifier: "fr_FR"))
+            }
 
             Button("Calculer pour cette heure") { apply() }
                 .buttonStyle(.osaPillSecondary)
@@ -391,6 +406,8 @@ private struct RoutingDepartPanel: View {
         Button(action: action) {
             Text(title)
                 .font(.osa(13, .semibold))
+                .lineLimit(1)
+                .fixedSize()
                 .foregroundStyle(on ? Color.black : Osa.text)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 36)
@@ -421,7 +438,7 @@ private struct RoutingStopsPanel: View {
                         .background(Osa.bg, in: Circle())
                         .overlay(Circle().strokeBorder(.white, lineWidth: 2))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(s.name).font(.osa(15, .semibold)).foregroundStyle(Osa.text).lineLimit(1)
+                        Text(s.name).font(.osa(15, .semibold)).foregroundStyle(Osa.text).lineLimit(2)
                         if let d = s.detail, !d.isEmpty { Text(d).font(.osa(12, .medium)).foregroundStyle(Osa.faint).lineLimit(1) }
                     }
                     Spacer(minLength: 0)

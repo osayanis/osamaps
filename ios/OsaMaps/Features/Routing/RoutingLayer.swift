@@ -6,11 +6,15 @@ import UIKit
 /// Les tracés sont insérés TOUT EN BAS des overlays « aboveRoads » : les calques des autres modules
 /// (trafic, signalements…) restent visibles par-dessus.
 
-/// Un tracé d'itinéraire (actif ou alternative).
+/// Une couche d'un tracé d'itinéraire. Chaque tracé est fait de plusieurs `MKPolyline` empilées
+/// (halo, liseré, trait…) rendues par `MKPolylineRenderer` : MapKit les dessine en vectoriel,
+/// sans raccords de tuiles en vue inclinée.
 final class RoutingRouteOverlay: MKPolyline {
+    enum Role: Int { case altCasing, alt, glow, casing, passed, line }
+    var role: Role = .line
     var routeId = ""
     var index = 0
-    var isActive = false
+    var isActive: Bool { role != .alt && role != .altCasing }
 }
 
 final class RoutingDestinationAnnotation: MKPointAnnotation {}
@@ -19,92 +23,30 @@ final class RoutingStopAnnotation: MKPointAnnotation {
     var number = 1
 }
 
-/// Rendu d'un tracé : dessine lui-même halo + liseré + trait (actif) ou liseré + trait gris (alternative),
-/// et la partie parcourue estompée — sans recréer d'overlay à chaque position.
-final class RoutingLineRenderer: MKOverlayRenderer {
-    private let pts: [MKMapPoint]
-    let isActive: Bool
-    private(set) var passedIndex = 0
-
-    init(overlay: RoutingRouteOverlay) {
-        let p = overlay.points()
-        pts = (0..<overlay.pointCount).map { p[$0] }
-        isActive = overlay.isActive
-        super.init(overlay: overlay)
-    }
-
-    /// Met à jour la partie parcourue et ne redessine que la zone concernée.
-    func setPassed(_ index: Int) {
-        let i = max(0, min(index, pts.count - 1))
-        guard i != passedIndex, !pts.isEmpty else { return }
-        let a = min(i, passedIndex), b = max(i, passedIndex)
-        passedIndex = i
-        var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
-        for k in max(0, a - 1)...min(pts.count - 1, b + 1) {
-            minX = min(minX, pts[k].x); maxX = max(maxX, pts[k].x)
-            minY = min(minY, pts[k].y); maxY = max(maxY, pts[k].y)
-        }
-        let pad = max(4000, max(maxX - minX, maxY - minY) * 0.1)
-        setNeedsDisplay(MKMapRect(x: minX - pad, y: minY - pad, width: maxX - minX + 2 * pad, height: maxY - minY + 2 * pad))
-    }
-
-    /// Largeur (pt écran) interpolée entre le zoom 8 et le zoom 16, comme la version web.
-    private static func width(_ z: Double, _ w8: Double, _ w16: Double) -> CGFloat {
+/// Style de chaque couche (largeur en points écran, interpolée entre le zoom 8 et le zoom 16 comme la version web).
+enum RoutingStyle {
+    static func width(_ role: RoutingRouteOverlay.Role, zoom z: Double) -> CGFloat {
         let t = max(0, min(1, (z - 8) / 8))
-        return CGFloat(w8 + (w16 - w8) * t)
+        func w(_ a: Double, _ b: Double) -> CGFloat { CGFloat(a + (b - a) * t) }
+        switch role {
+        case .altCasing: return w(6, 12)
+        case .alt: return w(3.5, 8)
+        case .glow: return w(14, 26)
+        case .casing: return w(7, 14)
+        case .passed: return w(3.5, 9)
+        case .line: return w(4, 9)
+        }
     }
 
-    private func path(_ range: ClosedRange<Int>, in rect: MKMapRect) -> CGPath? {
-        guard range.count >= 2 else { return nil }
-        let p = CGMutablePath()
-        var drawing = false
-        var any = false
-        for i in range.lowerBound..<range.upperBound {
-            let a = pts[i], b = pts[i + 1]
-            let visible = max(a.x, b.x) >= rect.minX && min(a.x, b.x) <= rect.maxX
-                && max(a.y, b.y) >= rect.minY && min(a.y, b.y) <= rect.maxY
-            if visible {
-                if !drawing { p.move(to: point(for: a)); drawing = true }
-                p.addLine(to: point(for: b))
-                any = true
-            } else {
-                drawing = false
-            }
+    static func color(_ role: RoutingRouteOverlay.Role) -> UIColor {
+        switch role {
+        case .altCasing: return UIColor.black.withAlphaComponent(0.35)
+        case .alt: return UIColor(red: 0.604, green: 0.604, blue: 0.635, alpha: 0.7)
+        case .glow: return UIColor.white.withAlphaComponent(0.14)
+        case .casing: return UIColor(red: 0.039, green: 0.039, blue: 0.059, alpha: 0.8)
+        case .passed: return UIColor.white.withAlphaComponent(0.22)
+        case .line: return .white
         }
-        return any ? p : nil
-    }
-
-    private func stroke(_ path: CGPath, _ ctx: CGContext, color: UIColor, width: CGFloat, zoomScale: MKZoomScale) {
-        ctx.addPath(path)
-        ctx.setStrokeColor(color.cgColor)
-        ctx.setLineWidth(width / zoomScale)
-        ctx.strokePath()
-    }
-
-    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
-        guard pts.count >= 2 else { return }
-        let z = 20 + log2(Double(zoomScale))
-        let maxW = Self.width(z, 16, 30)
-        let pad = Double(maxW / zoomScale)
-        let rect = mapRect.insetBy(dx: -pad, dy: -pad)
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-
-        if !isActive {
-            guard let p = path(0...(pts.count - 1), in: rect) else { return }
-            stroke(p, ctx, color: UIColor.black.withAlphaComponent(0.35), width: Self.width(z, 6, 12), zoomScale: zoomScale)
-            stroke(p, ctx, color: UIColor(red: 0.604, green: 0.604, blue: 0.635, alpha: 0.7), width: Self.width(z, 3.5, 8), zoomScale: zoomScale)
-            return
-        }
-
-        let idx = passedIndex
-        if idx > 0, let passed = path(0...idx, in: rect) {
-            stroke(passed, ctx, color: UIColor.white.withAlphaComponent(0.22), width: Self.width(z, 3.5, 9), zoomScale: zoomScale)
-        }
-        guard let rest = path(idx...(pts.count - 1), in: rect) else { return }
-        stroke(rest, ctx, color: UIColor.white.withAlphaComponent(0.14), width: maxW, zoomScale: zoomScale)
-        stroke(rest, ctx, color: UIColor(red: 0.039, green: 0.039, blue: 0.059, alpha: 0.8), width: Self.width(z, 7, 14), zoomScale: zoomScale)
-        stroke(rest, ctx, color: .white, width: Self.width(z, 4, 9), zoomScale: zoomScale)
     }
 }
 
@@ -176,7 +118,11 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
 
     private weak var map: MKMapView?
     private var overlays: [RoutingRouteOverlay] = []
-    private weak var activeRenderer: RoutingLineRenderer?
+    private var renderers: [ObjectIdentifier: MKPolylineRenderer] = [:]
+    /// Distances cumulées du tracé actif (fraction parcourue pour strokeStart/strokeEnd).
+    private var activeCum: [Double] = []
+    private var passedIndex = 0
+    private var zoomBucket = -1
     private var overlayKey = ""
     private var annotations: [MKAnnotation] = []
     private var annotationKey = ""
@@ -194,15 +140,13 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
                  attach: { [unowned self] map in self.attach(map) },
                  renderer: { [unowned self] overlay in self.renderer(for: overlay) },
                  annotationView: { map, a in Self.view(map, a) },
-                 didSelect: { _, a in a is RoutingDestinationAnnotation || a is RoutingStopAnnotation })
+                 didSelect: { _, a in a is RoutingDestinationAnnotation || a is RoutingStopAnnotation },
+                 regionDidChange: { [unowned self] map in self.updateWidths(map) },
+                 tap: { [unowned self] coord in self.tapped(coord) })
     }
 
     private func attach(_ map: MKMapView) {
         self.map = map
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
-        tap.cancelsTouchesInView = false
-        tap.delegate = self
-        map.addGestureRecognizer(tap)
         for g in [UIPanGestureRecognizer(target: self, action: #selector(moved(_:))),
                   UIPinchGestureRecognizer(target: self, action: #selector(moved(_:)))] as [UIGestureRecognizer] {
             g.cancelsTouchesInView = false
@@ -213,7 +157,7 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
         RoutingObserve.watch({ [unowned self] in self.currentOverlayKey() }) { [unowned self] _ in self.syncOverlays() }
         RoutingObserve.watch({ [unowned self] in self.currentAnnotationKey() }) { [unowned self] _ in self.syncAnnotations() }
         RoutingObserve.watch({ Core.shared.mode == .drive ? (Core.shared.progress?.shapeIndex ?? 0) : 0 }) { [unowned self] i in
-            self.activeRenderer?.setPassed(i)
+            self.setPassed(i)
         }
         RoutingObserve.watch({ [unowned self] in self.fitKey() }) { [unowned self] _ in self.scheduleFit() }
         RoutingObserve.watch({ Core.shared.mode }) { [unowned self] mode in
@@ -243,7 +187,9 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
         overlayKey = key
         map.removeOverlays(overlays)
         overlays = []
-        activeRenderer = nil
+        renderers = [:]
+        activeCum = []
+        passedIndex = 0
         let c = core
         guard c.mode != .browse else { return }
         var list: [RoutingRouteOverlay] = []
@@ -252,25 +198,73 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
             if c.mode == .drive && !isActive { continue }
             var coords = r.coordinates
             guard coords.count >= 2 else { continue }
-            let o = RoutingRouteOverlay(coordinates: &coords, count: coords.count)
-            o.routeId = r.id; o.index = i; o.isActive = isActive
-            list.append(o)
+            let roles: [RoutingRouteOverlay.Role] = isActive
+                ? (c.mode == .drive ? [.glow, .casing, .passed, .line] : [.glow, .casing, .line])
+                : [.altCasing, .alt]
+            for role in roles {
+                let o = RoutingRouteOverlay(coordinates: &coords, count: coords.count)
+                o.role = role; o.routeId = r.id; o.index = i
+                list.append(o)
+            }
+            if isActive { activeCum = Geo.cumulative(coords) }
         }
-        // actif d'abord à l'index 0, puis les alternatives à l'index 0 → alternatives sous l'actif,
-        // et le tout sous les calques des autres modules
-        for o in list where o.isActive { map.insertOverlay(o, at: 0, level: .aboveRoads) }
-        for o in list where !o.isActive { map.insertOverlay(o, at: 0, level: .aboveRoads) }
+        // ordre voulu (dessous → dessus) : alternatives, puis halo, liseré, parcouru, trait.
+        // Insérées à l'index 0 dans l'ordre inverse → tout reste SOUS les calques des autres modules.
+        // En conduite (vue inclinée), les bâtiments 3D masqueraient le tracé : on le pose au-dessus des libellés.
+        let activeLevel: MKOverlayLevel = c.mode == .drive ? .aboveLabels : .aboveRoads
+        let sorted = list.sorted { ($0.role.rawValue, $0.index) < ($1.role.rawValue, $1.index) }
+        for o in sorted.reversed() { map.insertOverlay(o, at: 0, level: o.isActive ? activeLevel : .aboveRoads) }
         overlays = list
+        if c.mode == .drive { setPassed(c.progress?.shapeIndex ?? 0) }
     }
 
     private func renderer(for overlay: MKOverlay) -> MKOverlayRenderer? {
         guard let o = overlay as? RoutingRouteOverlay else { return nil }
-        let r = RoutingLineRenderer(overlay: o)
-        if o.isActive {
-            activeRenderer = r
-            if core.mode == .drive { r.setPassed(core.progress?.shapeIndex ?? 0) }
-        }
+        let r = MKPolylineRenderer(polyline: o)
+        r.strokeColor = RoutingStyle.color(o.role)
+        r.lineWidth = RoutingStyle.width(o.role, zoom: Self.zoom(map))
+        r.lineCap = .round
+        r.lineJoin = .round
+        renderers[ObjectIdentifier(o)] = r
+        applyPassed(o, r)
         return r
+    }
+
+    private static func zoom(_ map: MKMapView?) -> Double {
+        guard let map, map.bounds.width > 0 else { return 14 }
+        // largeur visible en points de carte → niveau de zoom (monde = 256 × 2^z points écran)
+        let scale = Double(map.bounds.width) / map.visibleMapRect.size.width
+        return 20 + log2(max(scale, 1e-9))
+    }
+
+    /// Largeurs selon le zoom (seulement quand on change de demi-niveau).
+    private func updateWidths(_ map: MKMapView) {
+        let z = Self.zoom(map)
+        let bucket = Int((z * 2).rounded())
+        guard bucket != zoomBucket else { return }
+        zoomBucket = bucket
+        for o in overlays {
+            guard let r = renderers[ObjectIdentifier(o)] else { continue }
+            r.lineWidth = RoutingStyle.width(o.role, zoom: z)
+            r.setNeedsDisplay()
+        }
+    }
+
+    /// Partie parcourue (conduite) : le trait plein commence où l'on est, l'estompé s'arrête là.
+    private func setPassed(_ index: Int) {
+        guard !activeCum.isEmpty else { return }
+        let i = max(0, min(index, activeCum.count - 1))
+        guard i != passedIndex else { return }
+        passedIndex = i
+        for o in overlays where o.isActive {
+            if let r = renderers[ObjectIdentifier(o)] { applyPassed(o, r); r.setNeedsDisplay() }
+        }
+    }
+
+    private func applyPassed(_ o: RoutingRouteOverlay, _ r: MKPolylineRenderer) {
+        guard o.isActive, let total = activeCum.last, total > 0, passedIndex < activeCum.count else { return }
+        let f = CGFloat(activeCum[passedIndex] / total)
+        if o.role == .passed { r.strokeStart = 0; r.strokeEnd = f } else { r.strokeStart = f; r.strokeEnd = 1 }
     }
 
     // MARK: Marqueurs
@@ -361,11 +355,6 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
         if !isNew && (touched || abs(sheet - fittedHeight) < 24) { return }
         var pts = c.routes.flatMap(\.coordinates)
         if let p = c.position { pts.append(p.coordinate) }
-        if map.camera.heading != 0 || map.camera.pitch != 0 {
-            let cam = map.camera.copy() as! MKMapCamera
-            cam.heading = 0; cam.pitch = 0
-            map.setCamera(cam, animated: false)
-        }
         MapHub.fit(pts, animated: true)
         fittedKey = key
         touched = false
@@ -378,20 +367,20 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
         if g.state == .began && core.mode == .preview { touched = true }
     }
 
-    @objc private func tapped(_ g: UITapGestureRecognizer) {
-        guard g.state == .ended, let map else { return }
-        let pt = g.location(in: map)
+    /// Tape sur la carte (hors annotation) : poser une étape, ou choisir une alternative. true = géré.
+    private func tapped(_ coord: CLLocationCoordinate2D) -> Bool {
+        guard let map else { return false }
+        let pt = map.convert(coord, toPointTo: map)
         let c = core
         if model.pickOnMap && c.mode != .browse {
-            let coord = map.convert(pt, toCoordinateFrom: map)
             model.pickOnMap = false
             Task { @MainActor in
                 let found = await RoutingGeocode.reverse(coord)
                 RoutingModel.shared.addStop(RoutingModel.stopPlace(name: found?.name ?? "Étape", coordinate: coord, detail: found?.detail))
             }
-            return
+            return true
         }
-        guard c.mode == .preview, c.routes.count > 1 else { return }
+        guard c.mode == .preview, c.routes.count > 1 else { return false }
         var best: (index: Int, dist: CGFloat)?
         var activeDist = CGFloat.infinity
         for (i, r) in c.routes.enumerated() {
@@ -402,7 +391,9 @@ final class RoutingMapController: NSObject, UIGestureRecognizerDelegate {
         // le tracé actif (au-dessus) a la priorité ; zone de toucher large (une ligne de 4 pt est introuvable au doigt)
         if let best, best.dist < 24, best.dist < activeDist || activeDist > 10 {
             model.selectRoute(best.index)
+            return true
         }
+        return false
     }
 
     /// Distance en points écran entre un toucher et une ligne.
