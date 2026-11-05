@@ -15,7 +15,7 @@ enum API {
 
     static let session: URLSession = {
         let c = URLSessionConfiguration.default
-        c.timeoutIntervalForRequest = 20
+        c.timeoutIntervalForRequest = 90   // plafond ; le délai réel est posé par requête (20 s par défaut)
         c.httpAdditionalHeaders = ["User-Agent": "OsaMaps-iOS/0.1"]
         return URLSession(configuration: c)
     }()
@@ -29,12 +29,16 @@ enum API {
         var errorDescription: String? { "\(status) \(message)" }
     }
 
-    static func get<T: Decodable>(_ path: String, as: T.Type = T.self) async throws -> T {
-        try await send(URLRequest(url: url(path)))
+    /// Délai par défaut d'une requête. Les routes du serveur qui attendent un service externe lent
+    /// (Overpass…) passent `timeout:` plus long (ex. 60).
+    static let defaultTimeout: TimeInterval = 20
+
+    static func get<T: Decodable>(_ path: String, as: T.Type = T.self, timeout: TimeInterval? = nil) async throws -> T {
+        try await send(URLRequest(url: url(path), timeoutInterval: timeout ?? defaultTimeout))
     }
 
-    static func post<T: Decodable, B: Encodable>(_ path: String, body: B, as: T.Type = T.self) async throws -> T {
-        var r = URLRequest(url: url(path))
+    static func post<T: Decodable, B: Encodable>(_ path: String, body: B, as: T.Type = T.self, timeout: TimeInterval? = nil) async throws -> T {
+        var r = URLRequest(url: url(path), timeoutInterval: timeout ?? defaultTimeout)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try encoder.encode(body)
@@ -42,8 +46,8 @@ enum API {
     }
 
     /// Variante sans type : renvoie le JSON brut (dictionnaire/tableau).
-    static func json(_ path: String, method: String = "GET", body: Any? = nil) async throws -> Any {
-        var r = URLRequest(url: url(path))
+    static func json(_ path: String, method: String = "GET", body: Any? = nil, timeout: TimeInterval? = nil) async throws -> Any {
+        var r = URLRequest(url: url(path), timeoutInterval: timeout ?? defaultTimeout)
         r.httpMethod = method
         if let body {
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -55,8 +59,8 @@ enum API {
     }
 
     /// Requête vers un service externe (Valhalla, IGN, Photon, Open-Meteo…) avec le même User-Agent.
-    static func external<T: Decodable>(_ url: URL, as: T.Type = T.self) async throws -> T {
-        try await send(URLRequest(url: url))
+    static func external<T: Decodable>(_ url: URL, as: T.Type = T.self, timeout: TimeInterval? = nil) async throws -> T {
+        try await send(URLRequest(url: url, timeoutInterval: timeout ?? defaultTimeout))
     }
 
     private static func url(_ path: String) -> URL {
