@@ -15,6 +15,10 @@ enum FriendsKeychain {
     /// nil si le trousseau est momentanément illisible (appareil pas encore déverrouillé…) : surtout ne PAS
     /// en recréer un dans ce cas, l'ancien serait écrasé et l'identité perdue. On réessaiera à la reconnexion.
     static func secret() -> String? {
+        #if targetEnvironment(simulator)
+        // build Simulateur non signée : pas d'entitlement trousseau (-34018). Repli de test, Simulateur seulement.
+        if lastStatus == errSecMissingEntitlement || probeMissingEntitlement() { return simulatorSecret() }
+        #endif
         switch read() {
         case .found(let s) where valid(s): return s
         case .failed: return nil
@@ -29,6 +33,9 @@ enum FriendsKeychain {
     /// « Supprimer mes données » : on oublie le secret (un nouveau sera créé).
     static func reset() {
         SecItemDelete(base as CFDictionary)
+        #if targetEnvironment(simulator)
+        UserDefaults.standard.removeObject(forKey: "osamaps.friends.simulatorSecret")
+        #endif
     }
 
     private static var base: [String: Any] {
@@ -36,6 +43,23 @@ enum FriendsKeychain {
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }
+
+    #if targetEnvironment(simulator)
+    private static var lastStatus: OSStatus = errSecSuccess
+    private static func probeMissingEntitlement() -> Bool {
+        var q = base
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        lastStatus = SecItemCopyMatching(q as CFDictionary, nil)
+        return lastStatus == errSecMissingEntitlement
+    }
+    private static func simulatorSecret() -> String {
+        let key = "osamaps.friends.simulatorSecret"
+        if let s = UserDefaults.standard.string(forKey: key), valid(s) { return s }
+        let s = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
+        UserDefaults.standard.set(s, forKey: key)
+        return s
+    }
+    #endif
 
     private enum ReadResult { case found(String), missing, failed }
 
