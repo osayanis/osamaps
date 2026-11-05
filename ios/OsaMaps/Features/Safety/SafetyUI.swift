@@ -242,11 +242,11 @@ struct SafetySettingsSection: View {
 
     /// Dit honnêtement si les données publiques ne sont pas disponibles côté serveur.
     private func checkData() async {
-        async let z = try? SafetyData.zones((w: 2.3, s: 46.5, e: 2.4, n: 46.6))
+        async let z = SafetyData.zoneTiles(SafetyGeo.zoneTiles(w: 3.3, s: 46.5, e: 3.4, n: 46.6))
         async let f = try? SafetyData.zfe()
         let (zr, fr) = await (z, f)
         var missing: [String] = []
-        if zr?.available != true { missing.append("zones de danger") }
+        if zr.isEmpty { missing.append("zones de danger") }
         if fr?.available != true { missing.append("ZFE") }
         status = missing.isEmpty ? nil
             : "Données indisponibles pour le moment : \(missing.joined(separator: " et ")). Les autres alertes fonctionnent."

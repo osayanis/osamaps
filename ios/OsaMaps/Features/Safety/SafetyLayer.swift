@@ -4,25 +4,30 @@ import Observation
 
 /// Calques de la carte (port de `SafetyLayers.tsx`) :
 ///  - périmètres ZFE (trait discret en pointillés), visibles quand la vue couvre moins de ~3° ;
-///  - zones de danger de toute la France, dans tous les modes et à tous les zooms (pastille quand
-///    la zone est trop petite à l'écran, disque sinon) ;
+///  - zones de danger « façon Waze » : rien en vue large, une icône discrète par zone (au MILIEU du tronçon,
+///    regroupées par MapKit quand elles se chevauchent) à moyenne échelle, et de près le tronçon surligné sur
+///    la route. Seules les tuiles visibles sont chargées ;
 ///  - portions de l'itinéraire en zone de danger (aperçu et conduite).
-/// Jamais la position d'un radar : les pastilles (vue large) sont le centre DÉCALÉ d'une zone.
+/// Jamais la position d'un radar : le serveur ne l'envoie pas (l'appareil est entre 15 et 85 % du tronçon).
 final class SafetyZfePolygon: MKPolygon {}
 final class SafetyRouteZoneLine: MKPolyline {}
 
 @MainActor
 final class SafetyMapController {
     static let shared = SafetyMapController()
+    /// Au-delà (latitude, en degrés : ~250 km), la vue est trop large : pas de zones (comme Waze).
+    static let maxSpan = 2.4
 
     private weak var map: MKMapView?
     private var zfeOverlays: [SafetyZfePolygon] = []
     private var zfeShown = false
-    private var zonesOverlay: SafetyZonesOverlay?
-    private var zonesShown = false
-    private var zonesLoading = false
-    private var routeOverlays: [SafetyRouteZoneLine] = []
     private var zfeLoading = false
+    private let segments = SafetySegmentsOverlay()
+    private var segmentsShown = false
+    private var shown: [String: SafetyZoneAnnotation] = [:]
+    private var zonesTask: Task<Void, Never>?
+    private var regionWork: DispatchWorkItem?
+    private var routeOverlays: [SafetyRouteZoneLine] = []
 
     private init() {}
 
@@ -30,11 +35,23 @@ final class SafetyMapController {
         MapLayer(id: "safety", zIndex: 60,
                  attach: { map in SafetyMapController.shared.attach(map) },
                  renderer: { overlay in SafetyMapController.renderer(overlay) },
+                 annotationView: { map, annotation in
+                     if annotation is SafetyZoneAnnotation {
+                         return map.dequeueReusableAnnotationView(withIdentifier: SafetyZoneView.reuse, for: annotation)
+                     }
+                     if let c = annotation as? MKClusterAnnotation, c.memberAnnotations.first is SafetyZoneAnnotation {
+                         return map.dequeueReusableAnnotationView(withIdentifier: SafetyZoneClusterView.reuse, for: annotation)
+                     }
+                     return nil
+                 },
+                 didSelect: { map, annotation in SafetyMapController.shared.select(map, annotation) },
                  regionDidChange: { map in SafetyMapController.shared.regionChanged(map) })
     }
 
     private func attach(_ map: MKMapView) {
         self.map = map
+        map.register(SafetyZoneView.self, forAnnotationViewWithReuseIdentifier: SafetyZoneView.reuse)
+        map.register(SafetyZoneClusterView.self, forAnnotationViewWithReuseIdentifier: SafetyZoneClusterView.reuse)
         observe()
         refresh()
     }
@@ -61,6 +78,25 @@ final class SafetyMapController {
 
     private func regionChanged(_ map: MKMapView) {
         updateZfe(map)
+        // en conduite la caméra bouge sans arrêt : on regroupe les mises à jour
+        regionWork?.cancel()
+        let work = DispatchWorkItem { MainActor.assumeIsolated { SafetyMapController.shared.updateZones(map) } }
+        regionWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    private func select(_ map: MKMapView, _ annotation: MKAnnotation) -> Bool {
+        if let a = annotation as? SafetyZoneAnnotation {
+            Haptic.play("light")
+            emit(.toast(Toast(text: "Zone de danger sur \(Geo.formatDistance(a.length)) : reste attentif",
+                              icon: "exclamationmark.triangle.fill", tone: .warn)))
+            return true
+        }
+        if let c = annotation as? MKClusterAnnotation, c.memberAnnotations.first is SafetyZoneAnnotation {
+            MapHub.fit(c.memberAnnotations.map(\.coordinate))
+            return true
+        }
+        return false
     }
 
     // MARK: ZFE
@@ -101,25 +137,59 @@ final class SafetyMapController {
         }
     }
 
-    // MARK: Zones de danger (toute la France)
+    // MARK: Zones de danger (tuiles visibles)
 
     private func updateZones(_ map: MKMapView) {
         let want = SafetySettings.shared.dangerZones
-        if want, zonesOverlay == nil {
-            guard !zonesLoading else { return }
-            zonesLoading = true
-            Task {
-                let zones = await SafetyData.allZones()
-                zonesLoading = false
-                guard !zones.isEmpty else { return }
-                zonesOverlay = SafetyZonesOverlay(zones)
-                updateZones(map)
-            }
+        if want != segmentsShown {
+            if want { map.addOverlay(segments, level: .aboveRoads) } else { map.removeOverlay(segments) }
+            segmentsShown = want
+        }
+        let region = map.region
+        guard want, region.span.latitudeDelta < Self.maxSpan, region.span.latitudeDelta > 0 else {
+            zonesTask?.cancel()
+            syncAnnotations(map, [])
             return
         }
-        guard let o = zonesOverlay else { return }
-        if want && !zonesShown { map.addOverlay(o, level: .aboveRoads); zonesShown = true }
-        else if !want && zonesShown { map.removeOverlay(o); zonesShown = false }
+        // la vue + une marge d'un quart de chaque côté (déplacement sans trou)
+        let c = region.center, s = region.span
+        let w = c.longitude - s.longitudeDelta * 0.75, e = c.longitude + s.longitudeDelta * 0.75
+        let so = c.latitude - s.latitudeDelta * 0.75, n = c.latitude + s.latitudeDelta * 0.75
+        let keys = SafetyGeo.zoneTiles(w: w, s: so, e: e, n: n, limit: 24)
+        let area = (w: w, s: so, e: e, n: n)
+        apply(map, keys: keys, area: area) // tout de suite ce qui est en cache
+        zonesTask?.cancel()
+        zonesTask = Task {
+            _ = await SafetyData.zoneTiles(keys)
+            guard !Task.isCancelled else { return }
+            apply(map, keys: keys, area: area)
+        }
+    }
+
+    private func apply(_ map: MKMapView, keys: [String], area: (w: Double, s: Double, e: Double, n: Double)) {
+        var zones: [SafetyZone] = []
+        for k in keys { zones += SafetyData.cachedZones(k) ?? [] }
+        if segments.add(zones) { (map.renderer(for: segments) as? SafetySegmentsRenderer)?.setNeedsDisplay() }
+        let visible = zones.filter {
+            $0.mid.longitude >= area.w && $0.mid.longitude <= area.e && $0.mid.latitude >= area.s && $0.mid.latitude <= area.n
+        }
+        syncAnnotations(map, visible)
+    }
+
+    /// Ajoute / retire les icônes pour coller aux zones voulues (MapKit les regroupe).
+    private func syncAnnotations(_ map: MKMapView, _ zones: [SafetyZone]) {
+        var want: [String: SafetyZone] = [:]
+        for z in zones { want[z.id] = z }
+        let gone = shown.filter { want[$0.key] == nil }
+        if !gone.isEmpty {
+            map.removeAnnotations(Array(gone.values))
+            for k in gone.keys { shown[k] = nil }
+        }
+        let new = want.values.filter { shown[$0.id] == nil }.map(SafetyZoneAnnotation.init)
+        if !new.isEmpty {
+            for a in new { shown[a.id] = a }
+            map.addAnnotations(new)
+        }
     }
 
     // MARK: Itinéraire
@@ -148,11 +218,11 @@ final class SafetyMapController {
             r.lineWidth = 1.5
             r.lineDashPattern = [6, 4]
             return r
-        case let o as SafetyZonesOverlay:
-            return SafetyZonesRenderer(o, color: danger)
+        case let o as SafetySegmentsOverlay:
+            return SafetySegmentsRenderer(o, color: danger)
         case let o as SafetyRouteZoneLine:
             let r = MKPolylineRenderer(polyline: o)
-            r.strokeColor = danger.withAlphaComponent(0.5)
+            r.strokeColor = danger.withAlphaComponent(0.6)
             r.lineWidth = 12
             r.lineCap = .round
             r.lineJoin = .round
@@ -163,53 +233,210 @@ final class SafetyMapController {
     }
 }
 
-/// Toutes les zones de danger en UN overlay (≈ 3 300 disques) : un MKCircle par zone serait trop lourd.
-/// Données immuables, lues par le rendu sur les fils de MapKit.
-final class SafetyZonesOverlay: NSObject, MKOverlay, @unchecked Sendable {
-    let points: [MKMapPoint]
-    /// Rayons en points de carte (dépendent de la latitude).
-    let radii: [Double]
-    let maxRadius: Double
-    let coordinate = CLLocationCoordinate2D(latitude: 46.6, longitude: 2.4)
-    let boundingMapRect = MKMapRect.world
+// MARK: - Icônes
 
-    init(_ zones: [SafetyZone]) {
-        points = zones.map { MKMapPoint($0.center) }
-        radii = zones.map { $0.r * MKMapPointsPerMeterAtLatitude($0.lat) }
-        maxRadius = radii.max() ?? 0
+/// Icône d'une zone : au milieu du tronçon (jamais sur l'appareil).
+final class SafetyZoneAnnotation: NSObject, MKAnnotation {
+    let id: String
+    let kind: String
+    let length: Double
+    let coordinate: CLLocationCoordinate2D
+    var title: String? { "Zone de danger" }
+
+    init(_ z: SafetyZone) {
+        id = z.id; kind = z.kind; length = z.length; coordinate = z.mid
     }
 }
 
-final class SafetyZonesRenderer: MKOverlayRenderer, @unchecked Sendable {
-    private let zones: SafetyZonesOverlay
-    private let color: CGColor
-    private let dotFill: CGColor
+@MainActor
+enum SafetyZoneImages {
+    static let size: CGFloat = 24
+
+    /// Pastille sombre, liseré jaune, triangle « danger ».
+    static let single: UIImage = badge(count: nil)
+
+    private static var clusters: [String: UIImage] = [:]
+    static func cluster(_ n: Int) -> UIImage {
+        let text = n > 99 ? "99+" : "\(n)"
+        if let i = clusters[text] { return i }
+        let i = badge(count: text)
+        clusters[text] = i
+        return i
+    }
+
+    private static func badge(count: String?) -> UIImage {
+        let d = size
+        let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11, weight: .heavy), .foregroundColor: UIColor.black]
+        let textSize = (count as NSString?)?.size(withAttributes: attrs) ?? .zero
+        let pillW = count == nil ? 0 : max(16, textSize.width + 8)
+        let pillH: CGFloat = 16
+        // la pastille du nombre déborde en haut à droite
+        let total = CGSize(width: d + (count == nil ? 0 : pillW - 8), height: d + (count == nil ? 0 : 6))
+        let origin = CGPoint(x: 0, y: total.height - d)
+        let yellow = UIColor(Osa.danger)
+        return UIGraphicsImageRenderer(size: total).image { ctx in
+            let g = ctx.cgContext
+            let circle = CGRect(origin: origin, size: CGSize(width: d, height: d)).insetBy(dx: 0.75, dy: 0.75)
+            g.setFillColor(UIColor(red: 14 / 255, green: 14 / 255, blue: 20 / 255, alpha: 0.92).cgColor)
+            g.fillEllipse(in: circle)
+            g.setStrokeColor(yellow.withAlphaComponent(0.9).cgColor)
+            g.setLineWidth(1.5)
+            g.strokeEllipse(in: circle)
+            let cfg = UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)
+                .applying(UIImage.SymbolConfiguration(paletteColors: [.black, yellow]))
+            if let sym = UIImage(systemName: "exclamationmark.triangle.fill", withConfiguration: cfg) {
+                let s = sym.size
+                sym.draw(in: CGRect(x: origin.x + (d - s.width) / 2, y: origin.y + (d - s.height) / 2 - 0.5, width: s.width, height: s.height))
+            }
+            if let count {
+                let pill = CGRect(x: total.width - pillW, y: 0, width: pillW, height: pillH)
+                g.setFillColor(UIColor.white.cgColor)
+                g.addPath(UIBezierPath(roundedRect: pill, cornerRadius: pillH / 2).cgPath)
+                g.fillPath()
+                (count as NSString).draw(at: CGPoint(x: pill.midX - textSize.width / 2, y: pill.midY - textSize.height / 2), withAttributes: attrs)
+            }
+        }
+    }
+}
+
+final class SafetyZoneView: MKAnnotationView {
+    static let reuse = "safety.zone"
+    static let cluster = "safety-zone"
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        clusteringIdentifier = Self.cluster
+        collisionMode = .circle
+        canShowCallout = false
+        // discrètes : les signalements et la police passent devant
+        displayPriority = MKFeatureDisplayPriority(rawValue: 600)
+        zPriority = MKAnnotationViewZPriority(rawValue: 200)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func prepareForDisplay() {
+        super.prepareForDisplay()
+        clusteringIdentifier = Self.cluster
+        image = MainActor.assumeIsolated { SafetyZoneImages.single }
+        accessibilityLabel = "Zone de danger"
+        isAccessibilityElement = true
+    }
+}
+
+final class SafetyZoneClusterView: MKAnnotationView {
+    static let reuse = "safety.zone.cluster"
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        collisionMode = .circle
+        canShowCallout = false
+        displayPriority = MKFeatureDisplayPriority(rawValue: 650)
+        zPriority = MKAnnotationViewZPriority(rawValue: 210)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func prepareForDisplay() {
+        super.prepareForDisplay()
+        guard let c = annotation as? MKClusterAnnotation else { return }
+        let n = c.memberAnnotations.count
+        image = MainActor.assumeIsolated { SafetyZoneImages.cluster(n) }
+        // l'icône (pas la pastille du nombre) est centrée sur le groupe
+        centerOffset = CGPoint(x: (image?.size.width ?? 0) / 2 - SafetyZoneImages.size / 2,
+                               y: -((image?.size.height ?? 0) / 2 - SafetyZoneImages.size / 2))
+        accessibilityLabel = "\(n) zones de danger"
+        isAccessibilityElement = true
+    }
+}
+
+// MARK: - Tronçons surlignés
+
+/// Tous les tronçons chargés en UN overlay (un MKPolyline par zone serait trop lourd en déplaçant la carte).
+/// Complété au fil des tuiles chargées ; lu par le rendu sur les fils de MapKit (verrou).
+final class SafetySegmentsOverlay: NSObject, MKOverlay, @unchecked Sendable {
+    struct Item: Sendable {
+        let rect: MKMapRect
+        let lines: [[MKMapPoint]]
+        /// Longueur en points de carte (pour ne dessiner que les tronçons assez longs à l'écran).
+        let mapLength: Double
+        /// Disque de repli : centre et rayon en points de carte.
+        let disk: (center: MKMapPoint, r: Double)?
+    }
+
+    private let lock = NSLock()
+    private var byId: [String: Item] = [:]
+    private var list: [Item] = []
+    let coordinate = CLLocationCoordinate2D(latitude: 46.6, longitude: 2.4)
+    let boundingMapRect = MKMapRect.world
+
+    var items: [Item] {
+        lock.lock(); defer { lock.unlock() }
+        return list
+    }
+
+    /// Ajoute les zones inconnues ; true si quelque chose a changé.
+    func add(_ zones: [SafetyZone]) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        for z in zones where byId[z.id] == nil {
+            let ppm = MKMapPointsPerMeterAtLatitude(z.mid.latitude)
+            let item: Item
+            if let r = z.radius {
+                let c = MKMapPoint(z.mid), rr = r * ppm
+                item = Item(rect: MKMapRect(x: c.x - rr, y: c.y - rr, width: 2 * rr, height: 2 * rr),
+                            lines: [], mapLength: 2 * rr, disk: (c, rr))
+            } else {
+                let lines = z.lines.map { $0.map(MKMapPoint.init) }
+                var rect = MKMapRect.null
+                for l in lines { for p in l { rect = rect.union(MKMapRect(origin: p, size: MKMapSize(width: 0, height: 0))) } }
+                item = Item(rect: rect, lines: lines, mapLength: z.length * ppm, disk: nil)
+            }
+            byId[z.id] = item
+            changed = true
+        }
+        if changed { list = Array(byId.values) }
+        return changed
+    }
+}
+
+final class SafetySegmentsRenderer: MKOverlayRenderer, @unchecked Sendable {
+    private let segments: SafetySegmentsOverlay
+    private let stroke: CGColor
     private let diskFill: CGColor
     private let diskStroke: CGColor
-    private let dotStroke = UIColor.black.withAlphaComponent(0.55).cgColor
 
-    init(_ o: SafetyZonesOverlay, color: UIColor) {
-        zones = o
-        self.color = color.cgColor
-        dotFill = color.withAlphaComponent(0.85).cgColor
-        diskFill = color.withAlphaComponent(0.1).cgColor
-        diskStroke = color.withAlphaComponent(0.75).cgColor
+    init(_ o: SafetySegmentsOverlay, color: UIColor) {
+        segments = o
+        stroke = color.withAlphaComponent(0.5).cgColor
+        diskFill = color.withAlphaComponent(0.08).cgColor
+        diskStroke = color.withAlphaComponent(0.6).cgColor
         super.init(overlay: o)
     }
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in ctx: CGContext) {
         let px = 1 / Double(zoomScale) // un point d'écran, en points de carte
-        let dotR = 3.5 * px            // une zone plus petite que ça devient une pastille
-        let pad = max(zones.maxRadius, dotR) + 2 * px
-        let area = mapRect.insetBy(dx: -pad, dy: -pad)
-        var dots: [CGRect] = [], disks: [CGRect] = []
-        for (i, p) in zones.points.enumerated() where area.contains(p) {
-            let r = zones.radii[i]
-            if r < dotR * 2 {
-                dots.append(CGRect(x: p.x - dotR, y: p.y - dotR, width: 2 * dotR, height: 2 * dotR))
-            } else {
-                disks.append(CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
+        let width = 7 * px
+        let minLength = 16 * px        // un tronçon plus court que ça à l'écran n'est pas dessiné (l'icône suffit)
+        let area = mapRect.insetBy(dx: -width, dy: -width)
+        let path = CGMutablePath()
+        var disks: [CGRect] = []
+        for it in segments.items where it.mapLength >= minLength && it.rect.intersects(area) {
+            if let d = it.disk {
+                let c = point(for: d.center)
+                disks.append(CGRect(x: c.x - d.r, y: c.y - d.r, width: 2 * d.r, height: 2 * d.r))
+                continue
             }
+            for line in it.lines where line.count >= 2 {
+                path.move(to: point(for: line[0]))
+                for p in line.dropFirst() { path.addLine(to: point(for: p)) }
+            }
+        }
+        if !path.isEmpty {
+            ctx.addPath(path)
+            ctx.setStrokeColor(stroke)
+            ctx.setLineWidth(width)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            ctx.strokePath()
         }
         if !disks.isEmpty {
             ctx.setFillColor(diskFill)
@@ -218,13 +445,6 @@ final class SafetyZonesRenderer: MKOverlayRenderer, @unchecked Sendable {
             ctx.setLineWidth(1.5 * px)
             ctx.setLineDash(phase: 0, lengths: [4 * px, 4 * px])
             for d in disks { ctx.strokeEllipse(in: d) }
-            ctx.setLineDash(phase: 0, lengths: [])
-        }
-        if !dots.isEmpty {
-            ctx.setFillColor(dotFill)
-            ctx.setStrokeColor(dotStroke)
-            ctx.setLineWidth(1 * px)
-            for d in dots { ctx.fillEllipse(in: d); ctx.strokeEllipse(in: d) }
         }
     }
 }

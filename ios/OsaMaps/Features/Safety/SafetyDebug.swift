@@ -12,7 +12,7 @@ import Observation
 ///   osamaps://safety-test?passenger=1    demande « Tu es passager ? » par le Bus (contrat public)
 ///   osamaps://safety-test?critair=V4     règle la vignette
 ///   osamaps://safety-test?settings=1     ouvre les Réglages
-///   osamaps://safety-test?center=46.43,3.36   centre la carte (disques de zones en exploration)
+///   osamaps://safety-test?center=46.43,3.36[&km=9]   centre la carte (zones de danger en exploration), vue de km de côté
 ///
 /// Même chose sans lien (le Simulateur demande « Ouvrir dans OsaMaps ? ») : argument de lancement
 /// `-safetyTest "to=46.1278,3.4258&from=…"` (exécuté 2 s après le démarrage).
@@ -56,7 +56,8 @@ final class SafetyDebug {
         if q["settings"] != nil { Core.shared.settingsOpen = true }
         if let c = Self.coord(q["center"]), let map = Core.shared.map {
             Core.shared.follow = false
-            map.setRegion(MKCoordinateRegion(center: c, latitudinalMeters: 9000, longitudinalMeters: 9000), animated: false)
+            let m = (Double(q["km"] ?? "") ?? 9) * 1000
+            map.setRegion(MKCoordinateRegion(center: c, latitudinalMeters: m, longitudinalMeters: m), animated: false)
         }
         let to = Self.coord(q["to"])
         let from = Self.coord(q["from"]) ?? Core.shared.position?.coordinate ?? Location.defaultCenter
