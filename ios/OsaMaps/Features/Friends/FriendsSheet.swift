@@ -297,12 +297,13 @@ struct FriendsDetail: View {
                     Button {
                         core.openPanel(nil)
                         emit(.placeGo(Place(id: "friend-\(f.pid)", name: f.name, detail: "Position de ton ami", coordinate: at, kind: "friend")))
-                    } label: { Label("Rejoindre", systemImage: "location.north.fill").frame(maxWidth: .infinity) }
+                    } label: { Label("Rejoindre", systemImage: "location.north.fill").lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity) }
                         .buttonStyle(.osaPill)
                     Button { meet(f, at) } label: {
                         Group {
-                            if busy { Text("Recherche…") } else { Label("À mi-chemin", systemImage: "point.3.connected.trianglepath.dotted") }
+                            if busy { Text("Recherche…") } else { Text("À mi-chemin") }
                         }
+                        .lineLimit(1).minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.osaPillSecondary)
@@ -329,6 +330,7 @@ struct FriendsDetail: View {
                 }
             }
             .onAppear { look(at) }
+            .onChange(of: f.loc) { _, loc in keepInView(loc?.coordinate) }
         } else {
             FriendsHead(title: "Ami", back: back)
             Text("Cet ami n'est plus dans ta liste.").font(.osa(14, .medium)).foregroundStyle(Osa.dim)
@@ -340,10 +342,19 @@ struct FriendsDetail: View {
         guard let at else { return }
         let d = 0.006
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120)) // laisse le panneau prendre sa hauteur
+            try? await Task.sleep(for: .milliseconds(450)) // laisse le panneau prendre sa hauteur (sinon le marqueur passe dessous)
             MapHub.fit([.init(latitude: at.latitude - d, longitude: at.longitude - d),
                         .init(latitude: at.latitude + d, longitude: at.longitude + d)])
         }
+    }
+
+    /// Il bouge : on le garde à l'écran, sans recadrer tant qu'il reste visible au-dessus du panneau
+    /// (on ne contrarie pas quelqu'un qui déplace la carte).
+    private func keepInView(_ at: CLLocationCoordinate2D?) {
+        guard let at, let map = core.map else { return }
+        let p = map.convert(at, toPointTo: map)
+        let visible = map.bounds.inset(by: UIEdgeInsets(top: 100, left: 30, bottom: core.sheetHeight + 40, right: 70))
+        if !visible.contains(p) { look(at) }
     }
 
     private func meet(_ f: FriendsFriend, _ at: CLLocationCoordinate2D) {

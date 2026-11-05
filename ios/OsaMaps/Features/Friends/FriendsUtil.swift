@@ -15,7 +15,7 @@ enum FriendsUtil {
     /// « 18 h 42 » depuis un horodatage en ms.
     static func clock(_ ms: Double) -> String {
         let c = Calendar.current.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: ms / 1000))
-        return String(format: "%d h %02d", c.hour ?? 0, c.minute ?? 0)
+        return String(format: "%d\u{00A0}h\u{00A0}%02d", c.hour ?? 0, c.minute ?? 0) // insécables : jamais « 10 / h 46 »
     }
 
     /// « 482 913 ».

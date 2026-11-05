@@ -145,7 +145,7 @@ final class FriendsAnnotationView: MKAnnotationView {
         let text = loc?.drive?.eta.map { "\(f.name) · \(FriendsUtil.clock($0))" } ?? f.name
         label.text = text
         let size = label.intrinsicContentSize
-        label.frame = CGRect(x: (bounds.width - size.width) / 2, y: 50, width: size.width, height: size.height)
+        label.frame = CGRect(x: (bounds.width - size.width) / 2, y: 56, width: size.width, height: size.height)
         accessibilityLabel = "\(f.name), \(FriendsUtil.statusLine(f))"
     }
 }
