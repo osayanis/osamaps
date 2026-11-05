@@ -89,16 +89,24 @@ struct FriendsList: View {
             VStack(alignment: .leading, spacing: 8) {
                 FriendsLabel("Demandes reçues")
                 ForEach(store.incoming) { r in
-                    HStack(spacing: 12) {
-                        FriendsAvatar(name: r.name ?? "?")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(r.name ?? "Quelqu'un").font(.osa(16, .bold)).foregroundStyle(Osa.text).lineLimit(1)
-                            Text("veut t'ajouter").font(.osa(13, .medium)).foregroundStyle(Osa.dim)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            FriendsAvatar(name: r.name ?? "?")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.name ?? "Quelqu'un").font(.osa(16, .bold)).foregroundStyle(Osa.text).lineLimit(1)
+                                Text("veut t'ajouter en ami").font(.osa(13, .medium)).foregroundStyle(Osa.dim).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 4)
-                        FriendsGhostButton("Refuser") { Task { await store.respond(r.pid, accept: false) } }
-                        Button("Accepter") { Task { await store.respond(r.pid, accept: true) } }.buttonStyle(.osaPill)
+                        HStack(spacing: 8) {
+                            Spacer(minLength: 0)
+                            FriendsGhostButton("Refuser") { Task { await store.respond(r.pid, accept: false) } }
+                            Button { Task { await store.respond(r.pid, accept: true) } } label: { Text("Accepter").lineLimit(1).fixedSize() }
+                                .buttonStyle(.osaPill)
+                        }
                     }
+                    .padding(12)
+                    .osaCard()
                 }
             }
         }
@@ -186,6 +194,7 @@ struct FriendsList: View {
                 FriendsLabel("Mon code ami")
                 Text(FriendsUtil.prettyCode(me.code)).font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(Osa.text).monospacedDigit()
+                    .lineLimit(1).fixedSize()
                     .accessibilityLabel("Mon code ami : \(me.code.map(String.init).joined(separator: " "))")
             }
             Spacer(minLength: 4)
@@ -198,7 +207,7 @@ struct FriendsList: View {
                 .accessibilityLabel("Copier mon code")
             if let url = store.inviteURL {
                 ShareLink(item: url, subject: Text("OsaMaps"), message: Text(store.inviteMessage)) {
-                    Label("Inviter", systemImage: "square.and.arrow.up")
+                    Label("Inviter", systemImage: "square.and.arrow.up").lineLimit(1).fixedSize()
                 }
                 .buttonStyle(.osaPill)
             }

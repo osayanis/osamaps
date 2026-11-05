@@ -88,6 +88,7 @@ struct FriendsGhostButton: View {
         Button(action: action) {
             Text(title).font(.osa(15, .semibold))
                 .foregroundStyle(danger ? Osa.jam : Osa.dim)
+                .lineLimit(1).fixedSize()
                 .padding(.horizontal, 12).frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
