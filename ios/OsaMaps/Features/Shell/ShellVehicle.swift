@@ -367,7 +367,8 @@ struct ShellVehicleBadge: View {
 
     var body: some View {
         let v = prefs.vehicle
-        if v.isTruck && prefs.onboarded {
+        // masqué quand un panneau est ouvert : le rail reste court (il ne doit pas monter sur la recherche)
+        if v.isTruck && prefs.onboarded && core.panel == nil {
             Button {
                 Haptic.play("light")
                 ShellVehicleState.shared.sheetOpen = true

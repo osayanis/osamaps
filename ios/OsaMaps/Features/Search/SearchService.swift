@@ -276,8 +276,10 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
             case "fuel": "Station poids lourds"
             default: "Parking poids lourds"
             }
-            var detail = label
-            if let cap = i.capacity { detail += " · \(cap) places PL" }
+            // nom OSM absent : le libellé sert de nom, le détail ne le répète pas
+            var parts: [String] = i.name == nil ? [] : [label]
+            if let cap = i.capacity { parts.append("\(cap) places PL") }
+            let detail = parts.isEmpty ? "OpenStreetMap" : parts.joined(separator: " · ")
             return SearchResult(id: "truck-\(i.id)", name: i.name ?? label, detail: detail, lat: i.lat, lng: i.lng,
                                 kind: i.kind == "fuel" ? "fuel" : "parking", typeLabel: label, source: .local, rel: 1)
         }
