@@ -201,11 +201,12 @@ function createController(map: MLMap) {
     getSocket().emit("traffic:watch", { bbox: bb });
     watching = true;
     try {
-      const [s, e] = await Promise.all([fetchSegments(bb), fetchEvents(bb, map.getZoom())]);
+      // les évènements ne doivent pas faire échouer le trafic (serveur plus ancien, source lente…)
+      const [s, e] = await Promise.all([fetchSegments(bb), fetchEvents(bb, map.getZoom()).catch(() => null)]);
       if (my !== seq) return;
       segs.clear();
       for (const f of s.features) segs.set(f.properties.id, f);
-      events = e.features;
+      if (e) events = e.features;
       render();
     } catch {
       /* serveur injoignable : on garde ce qu'on a */

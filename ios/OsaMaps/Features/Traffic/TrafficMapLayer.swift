@@ -22,7 +22,7 @@ final class TrafficMapController {
     private var overlays: [TrafficLinesOverlay] = []
     private var eventLines: [TrafficEventLineOverlay] = []
     private var eventLinesKey = ""
-    private var annotations: [String: TrafficEventAnnotation] = [:]
+    private var annotations: [String: MKPointAnnotation] = [:]
     private var seq = 0
     private var watching = false
     /// Zone déjà chargée (avec marge) et quand : inutile de recharger si on reste dedans.
@@ -46,11 +46,11 @@ final class TrafficMapController {
                  },
                  annotationView: { [unowned self] map, ann in annotationView(map, ann) },
                  didSelect: { map, ann in
-                     if let c = ann as? MKClusterAnnotation, c.memberAnnotations.first is TrafficEventAnnotation {
+                     if let c = ann as? TrafficClusterAnnotation {
                          // groupe : on zoome dessus (comme Waze), la fiche viendra au toucher d'une pastille seule
                          Haptic.play("light")
                          Core.shared.follow = false
-                         let pts = c.memberAnnotations.map { MKMapPoint($0.coordinate) }
+                         let pts = c.members.map { MKMapPoint($0) }
                          var r = MKMapRect.null
                          for p in pts { r = r.union(MKMapRect(origin: p, size: MKMapSize(width: 1, height: 1))) }
                          let minSide = MKMapPointsPerMeterAtLatitude(c.coordinate.latitude) * 600
@@ -170,8 +170,10 @@ final class TrafficMapController {
         Task { @MainActor [weak self] in
             do {
                 async let s = API.get("traffic?bbox=\(q)", as: TrafficSegmentsResponse.self)
-                async let e = API.get("events?bbox=\(q)&z=\(z)", as: TrafficEventsResponse.self)
-                let (segsRes, evRes) = try await (s, e)
+                // les évènements ne doivent pas faire échouer le trafic (ni l'inverse) : serveur plus ancien, source lente…
+                async let e: TrafficEventsResponse? = try? await API.get("events?bbox=\(q)&z=\(z)", as: TrafficEventsResponse.self, timeout: 25)
+                let segsRes = try await s
+                let evRes = await e ?? TrafficEventsResponse(features: self?.events ?? [])
                 guard let self, my == self.seq, TrafficStore.shared.visible else { return }
                 self.segs = Dictionary(segsRes.features.map { ($0.properties.id, $0) }, uniquingKeysWith: { _, b in b })
                 self.events = evRes.features
@@ -241,28 +243,77 @@ final class TrafficMapController {
         guard let map else { return }
         let z = Self.zoom(of: map)
         let show = TrafficStore.shared.visible && z >= Self.eventsMinZoom
-        var wanted: [String: TrafficEvent] = [:]
-        if show {
-            for e in events where Self.visible(e.properties, zoom: z) { wanted[e.properties.id] = e }
+        var visibleEvents: [TrafficEvent] = []
+        if show { visibleEvents = events.filter { Self.visible($0.properties, zoom: z) } }
+        updateEventLines(show && z >= Self.eventLinesMinZoom ? visibleEvents : [])
+
+        // Regroupement maison sur une grille d'écran de 46 pt (palier de zoom arrondi au demi, pour que
+        // les groupes ne changent pas à chaque petit mouvement). L'important n'est jamais regroupé.
+        let zq = (z * 2).rounded() / 2
+        let cell = 46 * pow(2, 20 - zq)
+        var wanted: [String: () -> MKPointAnnotation] = [:]
+        var buckets: [String: [TrafficEvent]] = [:]
+        for e in visibleEvents {
+            guard let c = e.coordinate else { continue }
+            if Self.major(e.properties) || z >= 15.5 {
+                let p = e.properties
+                wanted["e:\(p.id)|\(p.severity)|\(p.title)"] = { TrafficEventAnnotation(props: p, coordinate: c) }
+                continue
+            }
+            let mp = MKMapPoint(c)
+            buckets["\(Int(mp.x / cell)):\(Int(mp.y / cell))", default: []].append(e)
         }
-        updateEventLines(show && z >= Self.eventLinesMinZoom ? Array(wanted.values) : [])
-        let stale = annotations.filter { wanted[$0.key] == nil || wanted[$0.key]!.properties != $0.value.props }
+        for (key, list) in buckets {
+            if list.count == 1, let e = list.first, let c = e.coordinate {
+                let p = e.properties
+                wanted["e:\(p.id)|\(p.severity)|\(p.title)"] = { TrafficEventAnnotation(props: p, coordinate: c) }
+                continue
+            }
+            let coords = list.compactMap(\.coordinate)
+            let top = list.map(\.properties).min { ($0.eventKind.rank, -$0.severity) < ($1.eventKind.rank, -$1.severity) }!
+            let lat = coords.map(\.latitude).reduce(0, +) / Double(coords.count)
+            let lng = coords.map(\.longitude).reduce(0, +) / Double(coords.count)
+            wanted["c:\(key)|\(zq)|\(list.count)|\(top.type)"] = {
+                TrafficClusterAnnotation(top: top, members: coords, coordinate: .init(latitude: lat, longitude: lng))
+            }
+        }
+        let stale = annotations.filter { wanted[$0.key] == nil }
         if !stale.isEmpty {
             map.removeAnnotations(Array(stale.values))
             for k in stale.keys { annotations[k] = nil }
         }
-        var add: [TrafficEventAnnotation] = []
-        for (id, e) in wanted where annotations[id] == nil {
-            guard let c = e.coordinate else { continue }
-            let a = TrafficEventAnnotation(props: e.properties, coordinate: c)
+        var add: [MKPointAnnotation] = []
+        for (id, make) in wanted where annotations[id] == nil {
+            let a = make()
             annotations[id] = a
             add.append(a)
         }
         if !add.isEmpty { map.addAnnotations(add) }
+        #if DEBUG
+        NSLog("OsaMaps traffic: %d évènements visibles → %d pastilles (zoom %.1f)", visibleEvents.count, annotations.count, z)
+        #endif
     }
 
+    /// Fermeture / accident / bouchon graves : toujours seuls sur la carte.
+    static func major(_ p: TrafficEventProps) -> Bool { p.severity >= 3 && p.eventKind.rank <= 2 }
+
     private func annotationView(_ map: MKMapView, _ ann: MKAnnotation) -> MKAnnotationView? {
-        if let c = ann as? MKClusterAnnotation { return clusterView(map, c) }
+        if let c = ann as? TrafficClusterAnnotation {
+            let id = "traffic-cluster"
+            let v = map.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: c, reuseIdentifier: id)
+            v.annotation = c
+            v.image = TrafficEventImage.cluster(c.top.eventKind, count: c.members.count)
+            v.canShowCallout = false
+            // hors du système de collision de MapKit : les pastilles « prix » des autres modules (.required)
+            // masqueraient sinon nos évènements ; on a déjà regroupé nous-mêmes
+            v.collisionMode = .none
+            v.displayPriority = .required
+            v.zPriority = MKAnnotationViewZPriority(rawValue: 400)
+            v.isAccessibilityElement = true
+            v.accessibilityLabel = "\(c.members.count) évènements, dont \(c.top.title)"
+            v.accessibilityTraits = .button
+            return v
+        }
         guard let a = ann as? TrafficEventAnnotation else { return nil }
         let id = "traffic-event"
         let v = map.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: a, reuseIdentifier: id)
@@ -270,32 +321,11 @@ final class TrafficMapController {
         let kind = a.props.eventKind
         v.image = TrafficEventImage.image(kind, severe: a.props.severity >= 3)
         v.canShowCallout = false
-        v.collisionMode = .circle
-        // l'important (fermetures, accidents, gravité forte) n'est jamais regroupé ni masqué en premier
-        // Les pastilles « prix » d'autres modules sont en .required : sous 990 on serait masqué presque partout.
-        // L'important (fermeture / accident / bouchon graves) est toujours affiché et jamais regroupé.
-        let major = a.props.severity >= 3 && kind.rank <= 2
-        v.displayPriority = major ? .required : MKFeatureDisplayPriority(rawValue: 960 + Float(a.props.severity) * 7 - Float(kind.rank))
-        v.clusteringIdentifier = major ? nil : "traffic-events"
+        v.collisionMode = .none
+        v.displayPriority = .required
+        v.zPriority = MKAnnotationViewZPriority(rawValue: 400 + Float(a.props.severity) * 10 - Float(kind.rank))
         v.isAccessibilityElement = true
         v.accessibilityLabel = [a.props.title, a.props.road].compactMap { $0 }.joined(separator: ", ")
-        v.accessibilityTraits = .button
-        return v
-    }
-
-    private func clusterView(_ map: MKMapView, _ c: MKClusterAnnotation) -> MKAnnotationView? {
-        let members = c.memberAnnotations.compactMap { $0 as? TrafficEventAnnotation }
-        guard !members.isEmpty, members.count == c.memberAnnotations.count else { return nil }
-        let id = "traffic-cluster"
-        let v = map.dequeueReusableAnnotationView(withIdentifier: id) ?? MKAnnotationView(annotation: c, reuseIdentifier: id)
-        v.annotation = c
-        let top = members.map(\.props).min { ($0.eventKind.rank, -$0.severity) < ($1.eventKind.rank, -$1.severity) }!
-        v.image = TrafficEventImage.cluster(top.eventKind, count: members.count)
-        v.canShowCallout = false
-        v.collisionMode = .circle
-        v.displayPriority = .required
-        v.isAccessibilityElement = true
-        v.accessibilityLabel = "\(members.count) évènements, dont \(top.title)"
         v.accessibilityTraits = .button
         return v
     }
@@ -361,6 +391,18 @@ final class TrafficMapController {
 
 private extension TrafficLevel {
     var rank: Int { self == .jam ? 2 : self == .slow ? 1 : 0 }
+}
+
+/// Groupe d'évènements proches (regroupement maison du module).
+final class TrafficClusterAnnotation: MKPointAnnotation {
+    let top: TrafficEventProps
+    let members: [CLLocationCoordinate2D]
+    init(top: TrafficEventProps, members: [CLLocationCoordinate2D], coordinate: CLLocationCoordinate2D) {
+        self.top = top
+        self.members = members
+        super.init()
+        self.coordinate = coordinate
+    }
 }
 
 /// Évènement officiel posé sur la carte (sous-classe propre au module).
