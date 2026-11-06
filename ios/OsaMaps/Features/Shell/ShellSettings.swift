@@ -212,6 +212,7 @@ struct ShellAboutSettings: View {
         prefs.avoidTolls = false; prefs.avoidHighways = false; prefs.avoidFerries = false
         prefs.mapStyle = "dark"; prefs.voice = true; prefs.speedTolerance = 5
         prefs.shareLocation = false; prefs.contributeTraffic = true
+        prefs.vehicle = Vehicle(); prefs.vehicleChosen = false
         core.settingsOpen = false
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))

@@ -32,7 +32,8 @@ struct AlongSettings: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Consommation").font(.osa(15, .semibold)).foregroundStyle(Osa.text)
-                    Text("Pour estimer le coût du trajet.").font(.osa(12.5, .medium)).foregroundStyle(Osa.faint)
+                    Text(Prefs.shared.vehicle.isTruck ? "\(Prefs.shared.vehicle.kind.label) : pour estimer le coût du trajet." : "Pour estimer le coût du trajet.")
+                        .font(.osa(12.5, .medium)).foregroundStyle(Osa.faint)
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: 0) {
@@ -59,7 +60,12 @@ struct AlongSettings: View {
 
     private func step(_ dir: Double) {
         if p.energy.isEV { p.evConsumption = min(40, max(8, (p.evConsumption + dir).rounded())) }
-        else { p.consumption = min(25, max(2, ((p.consumption + dir * 0.5) * 2).rounded() / 2)) }
+        else {
+            // camion : pas de 1 L, voiture : 0,5 L
+            let stepL = Prefs.shared.vehicle.isTruck ? 1.0 : 0.5
+            let r = p.consumptionRange
+            p.consumption = min(r.upperBound, max(r.lowerBound, ((p.consumption + dir * stepL) / stepL).rounded() * stepL))
+        }
         Haptic.play("light")
     }
 
