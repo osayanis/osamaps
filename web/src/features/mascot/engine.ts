@@ -4,7 +4,7 @@ import { emit, on } from "../../core/bus";
 import { distance } from "../../core/geometry";
 import { loadLocal, saveLocal } from "../../core/identity";
 import { simulated } from "../../core/geo";
-import { ACCESSORIES, BADGES, POINTS, badgeById, levelOf } from "./data";
+import { BADGES, POINTS, badgeById, levelOf } from "./data";
 import type { Accessory, Arms, Mood } from "./Mascot";
 
 /**
@@ -45,6 +45,7 @@ interface Saved {
   totalDistance: number;
   trips: number;
   badges: Record<string, number>;
+  /** Anciens accessoires (avant l'éditeur) : relus une fois pour la première apparence, voir look.ts. */
   equipped: Accessory[];
   history: Trip[];
   reports: number;
@@ -196,35 +197,9 @@ function checkBadges(ctx: { trip?: Trip } = {}): string[] {
   return earned;
 }
 
-export function isUnlocked(id: Accessory): boolean {
-  const a = ACCESSORIES.find((x) => x.id === id);
-  if (!a) return false;
-  const s = st();
-  if (a.badge) return !!s.badges[a.badge];
-  return levelOf(s.points).level >= (a.level ?? 99);
-}
-
-/** Met / enlève un accessoire (un seul par emplacement). */
-export function toggleAccessory(id: Accessory) {
-  if (!isUnlocked(id)) return;
-  const def = ACCESSORIES.find((a) => a.id === id)!;
-  const cur = st().equipped;
-  const equipped = cur.includes(id)
-    ? cur.filter((x) => x !== id)
-    : [...cur.filter((x) => ACCESSORIES.find((a) => a.id === x)?.spot !== def.spot), id];
-  patch({ equipped });
-}
-
 export function setSetting<K extends keyof Settings>(k: K, v: Settings[K]) {
   patch({ settings: { ...st().settings, [k]: v } });
 }
-
-/** Accessoires portés ET encore débloqués. */
-export const wornAccessories = (s: MascotState) => s.equipped.filter((a) => {
-  const d = ACCESSORIES.find((x) => x.id === a);
-  if (!d) return false;
-  return d.badge ? !!s.badges[d.badge] : levelOf(s.points).level >= (d.level ?? 99);
-});
 
 /* ───────────── humeur en direct ───────────── */
 
@@ -410,7 +385,7 @@ export function initMascot() {
 
   // accès de test headless : window.osamaps.mascot
   const w = window as unknown as { osamaps?: Record<string, unknown> };
-  if (w.osamaps) w.osamaps.mascot = { state: st, sleep: () => setLive({ sleeping: true, mood: "sleepy" }), poke, demoTrip, addPoints, toggleAccessory };
+  if (w.osamaps) w.osamaps.mascot = { state: st, sleep: () => setLive({ sleeping: true, mood: "sleepy" }), poke, demoTrip, addPoints };
   return () => offs.forEach((f) => f());
 }
 

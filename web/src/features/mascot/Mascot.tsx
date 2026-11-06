@@ -1,5 +1,8 @@
 import { useEffect, useId, useState } from "react";
+import type { VehicleKind } from "../../core/prefs";
 import { reducedMotion } from "./motion";
+import { BODY_TONES, DEFAULT_LOOK, type Look } from "./look";
+import { FacePart, GlassesPart, HatPart, NeckPart, VehicleBack, VehicleFront } from "./parts";
 
 /**
  * La mascotte de la suite Osa, en SVG — reproduction fidèle de `Mascot.swift` (OsaHUB) :
@@ -9,6 +12,7 @@ import { reducedMotion } from "./motion";
  */
 export type Mood = "calm" | "curious" | "excited" | "busy" | "happy" | "worried" | "sad" | "sleepy";
 export type Arms = "rest" | "up" | "wave";
+/** Anciens accessoires (avant l'éditeur d'apparence) : seulement pour relire les anciennes sauvegardes. */
 export type Accessory = "casquette" | "bonnet" | "couronne" | "lunettes" | "echarpe" | "noeud";
 
 export interface MascotProps {
@@ -20,9 +24,12 @@ export interface MascotProps {
   size?: number;
   /** Change → petit saut. */
   hop?: number;
-  /** Assise dans sa petite voiture (vue de face). */
+  /** Au volant (vue de face) : petite voiture, ou cabine de camion selon `vehicle`. */
   kart?: boolean;
-  accessories?: Accessory[];
+  /** Apparence choisie (couleur, chapeau, lunettes, visage, cou, couleur du véhicule). */
+  style?: Look;
+  /** Véhicule de conduite (profil véhicule partagé). */
+  vehicle?: VehicleKind;
   /** Cligner des yeux tout seul (désactivé dans les miniatures statiques). */
   blink?: boolean;
   /** "full" : tout le cadre ; "head" : recadré sur le corps (bouton rond). */
@@ -33,9 +40,6 @@ export interface MascotProps {
 }
 
 const INK = "#1b1d24";
-const LIGHT = "#fefdf7";
-const SHADE = "#d6cec2";
-const FEET_LOW = "#b3ab9e";
 const CHEEK = "#ff8096";
 
 /** Arc : sourire (`up` faux) ou œil fermé de joie / bouche triste (`up` vrai), dans un cadre w × h centré. */
@@ -48,11 +52,23 @@ function smile(w: number, h: number, up: boolean) {
 
 export function Mascot({
   mood = "calm", arms = "rest", look = { x: 0, y: 0 }, size = 90, hop = 0, kart = false,
-  accessories = [], blink = true, crop = "full", bounce = false, className,
+  style = DEFAULT_LOOK, vehicle = "car", blink = true, crop = "full", bounce = false, className,
 }: MascotProps) {
   const uid = useId().replace(/:/g, "");
   const [blinking, setBlinking] = useState(false);
   const [hopping, setHopping] = useState(false);
+  const [flash, setFlash] = useState<boolean | null>(null);
+  const [LIGHT, SHADE, FEET_LOW] = BODY_TONES[style.body];
+  const customFace = mood === "calm" && style.face !== "doux";
+  const truck = kart && vehicle !== "car";
+
+  // gyrophares du convoi exceptionnel : clignotent en alternance (immobiles si animations coupées)
+  const beacons = kart && vehicle === "superheavy";
+  useEffect(() => {
+    if (!beacons || reducedMotion()) { setFlash(null); return; }
+    const t = window.setInterval(() => setFlash((f) => !f), 420);
+    return () => window.clearInterval(t);
+  }, [beacons]);
 
   // clignement : toutes les 2,4 à 5 s, 110 ms (comme le Swift)
   useEffect(() => {
@@ -76,7 +92,6 @@ export function Mascot({
     return () => { cancelAnimationFrame(r); window.clearTimeout(t); };
   }, [hop]);
 
-  const has = (a: Accessory) => accessories.includes(a);
   const out = (side: number) => {
     // 0° = bras qui pend ; rotation autour de l'épaule
     const deg = arms === "up" ? 150 : arms === "wave" ? (side > 0 ? 150 : 18) : kart ? 8 : 18;
@@ -121,10 +136,11 @@ export function Mascot({
       </defs>
 
       {/* ombre au sol (fixe pendant le saut) */}
-      <ellipse className="mascot-shadow" cx="0" cy="51.5" rx={kart ? 64 : 42.5} ry="6" fill="#000" opacity="0.5" filter={`url(#s${uid})`} />
+      <ellipse className="mascot-shadow" cx="0" cy="51.5" rx={kart ? (truck ? 72 : 64) : 42.5} ry="6" fill="#000" opacity="0.5" filter={`url(#s${uid})`} />
 
       <g className={`mascot-body${hopping ? " is-hopping" : ""}`}>
         <g className="mascot-bob">
+          {truck && <VehicleBack kind={vehicle} ride={style.ride} flash={flash} uid={uid} />}
           {!kart && [-1, 1].map((s) => (
             <ellipse key={s} cx={s * 20} cy="43.2" rx="12" ry="6.5" fill={`url(#f${uid})`} />
           ))}
@@ -139,7 +155,8 @@ export function Mascot({
 
           {/* visage */}
           <g className="mascot-face" style={{ transform: `translate(${fx}px, ${fy}px)` }}>
-            {[-1, 1].map((s) => (
+            {customFace && <FacePart face={style.face} blink={blinking} skin={LIGHT} cheek={CHEEK} uid={uid} />}
+            {!customFace && [-1, 1].map((s) => (
               <g key={s}>
                 <g transform={`translate(${s * 17} -5)`}>
                   {mood === "happy" ? (
@@ -164,7 +181,7 @@ export function Mascot({
                 <ellipse cx={s * 30} cy="10" rx="8" ry="4" fill={CHEEK} fillOpacity="0.55" />
               </g>
             ))}
-            <g transform="translate(0 16)">
+            {!customFace && <g transform="translate(0 16)">
               {mood === "sad" && <path d={smile(15, 5, true)} fill="none" stroke={INK} strokeWidth="3.5" strokeLinecap="round" />}
               {mood === "worried" && <rect x="-5" y="-1.5" width="10" height="3" rx="1.5" fill={INK} />}
               {mood === "excited" && (
@@ -177,96 +194,17 @@ export function Mascot({
               {(mood === "calm" || mood === "happy") && (
                 <path d={smile(mood === "happy" ? 24 : 18, 7, false)} fill="none" stroke={INK} strokeWidth="3.5" strokeLinecap="round" />
               )}
-            </g>
-            {has("lunettes") && <Glasses />}
+            </g>}
+            <GlassesPart glasses={style.glasses} uid={uid} />
           </g>
 
-          {kart && <Kart />}
-          {has("echarpe") && <Scarf />}
-          {has("noeud") && <Bow />}
-          {has("casquette") && <Cap />}
-          {has("bonnet") && <Beanie />}
-          {has("couronne") && <Crown />}
+          {/* camions : le cou passe derrière la calandre ; petite voiture : par-dessus */}
+          {truck && <NeckPart neck={style.neck} uid={uid} />}
+          {kart && <VehicleFront kind={vehicle} ride={style.ride} uid={uid} />}
+          {!truck && <NeckPart neck={style.neck} uid={uid} />}
+          <HatPart hat={style.hat} uid={uid} />
         </g>
       </g>
     </svg>
-  );
-}
-
-/** La petite voiture vue de face : une coque sombre avec deux phares, devant le bas du corps. */
-function Kart() {
-  return (
-    <g className="mascot-kart">
-      {[-1, 1].map((s) => <rect key={s} x={s * 46 - 11} y="44" width="22" height="16" rx="6" fill="#0c0d11" />)}
-      <rect x="-62" y="22" width="124" height="32" rx="16" fill={INK} stroke="#fff" strokeOpacity="0.28" strokeWidth="1.6" />
-      <rect x="-40" y="27" width="80" height="4" rx="2" fill="#fff" fillOpacity="0.12" />
-      {[-1, 1].map((s) => <circle key={s} cx={s * 44} cy="38" r="5" fill="#fff" fillOpacity="0.92" />)}
-      <rect x="-14" y="38" width="28" height="7" rx="3.5" fill="#fff" fillOpacity="0.1" />
-    </g>
-  );
-}
-
-function Glasses() {
-  return (
-    <g>
-      <path d="M-5 -6 Q0 -9 5 -6" fill="none" stroke={INK} strokeWidth="2.6" strokeLinecap="round" />
-      {[-1, 1].map((s) => (
-        <g key={s}>
-          <rect x={s * 17 - 11} y="-13" width="22" height="16" rx="7" fill={INK} />
-          <path d={`M${s * 17 - 6} -9 L${s * 17 - 1} -9`} stroke="#fff" strokeOpacity="0.55" strokeWidth="2" strokeLinecap="round" />
-          <path d={`M${s * 28} -8 L${s * 46} -12`} stroke={INK} strokeWidth="2.6" strokeLinecap="round" />
-        </g>
-      ))}
-    </g>
-  );
-}
-
-function Cap() {
-  return (
-    <g>
-      <path d="M-43 -28 C-43 -66 43 -66 43 -28 Z" fill={INK} />
-      <path d="M-46 -31 Q4 -40 56 -30 Q58 -25 52 -24 Q4 -31 -44 -25 Q-50 -27 -46 -31 Z" fill="#2a2d38" />
-      <path d="M0 -56 L0 -30" fill="none" stroke="#fff" strokeOpacity="0.14" strokeWidth="2" />
-      <circle cx="0" cy="-56" r="3.4" fill="#fff" fillOpacity="0.85" />
-    </g>
-  );
-}
-
-function Beanie() {
-  return (
-    <g>
-      <path d="M-42 -28 C-44 -64 44 -64 42 -28 Z" fill="#2c2f3a" />
-      {[-24, -8, 8, 24].map((x) => <path key={x} d={`M${x} -30 L${x * 0.8} -52`} stroke="#fff" strokeOpacity="0.16" strokeWidth="2.4" strokeLinecap="round" />)}
-      <rect x="-46" y="-34" width="92" height="12" rx="6" fill="#3a3e4b" />
-      <circle cx="0" cy="-60" r="7" fill={LIGHT} />
-    </g>
-  );
-}
-
-function Crown() {
-  return (
-    <g>
-      <path d="M-26 -38 L-30 -62 L-14 -50 L0 -66 L14 -50 L30 -62 L26 -38 Z" fill="#ffcc00" stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
-      <circle cx="0" cy="-47" r="3" fill={INK} fillOpacity="0.8" />
-    </g>
-  );
-}
-
-function Scarf() {
-  return (
-    <g>
-      <path d="M26 24 L34 52 L22 54 L16 26 Z" fill="#c9455c" />
-      <path d="M-47 16 Q0 30 47 16 L46 27 Q0 41 -46 27 Z" fill="#e05a70" />
-      <path d="M-30 25 L-26 33 M-10 28 L-7 36 M10 28 L7 36 M30 25 L26 33" stroke="#fff" strokeOpacity="0.45" strokeWidth="2.2" strokeLinecap="round" />
-    </g>
-  );
-}
-
-function Bow() {
-  return (
-    <g transform="translate(0 33)">
-      <path d="M0 0 L-16 -9 Q-19 0 -16 9 Z M0 0 L16 -9 Q19 0 16 9 Z" fill={INK} strokeLinejoin="round" />
-      <rect x="-4.5" y="-4.5" width="9" height="9" rx="3" fill="#2f3240" />
-    </g>
   );
 }

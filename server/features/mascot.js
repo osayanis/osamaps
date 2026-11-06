@@ -4,6 +4,13 @@
 //   POST /mascot/score { id, name, points, week } → { week, top: [{ name, points, me? }], rank, total }
 //   POST /mascot/leave { id }                     → { ok: true }
 //   GET  /mascot/leaderboard                      → { week, top, total }
+// Apparence de la mascotte (éditeur « Ma mascotte »), pour que les amis la voient :
+//   POST /mascot/look { id, look }        → { ok: true }
+//   GET  /mascot/looks?pids=a,b           → { looks: { "<pid>": { body, hat, glasses, face, neck, ride, name } } }
+//   GET  /mascot/looks?codes=123456,…     → idem, indexé par code ami
+// Rangée par empreinte de l'identifiant d'appareil (jamais renvoyée). Le pid et le code ami viennent du module
+// friends (même identifiant d'appareil) : c'est toujours le code ATTRIBUÉ par le serveur, et personne ne peut
+// prendre le code d'un autre. On garde : empreinte, apparence, date. Rien d'autre.
 import { createHash } from "node:crypto";
 import { HttpError } from "../lib/router.js";
 
@@ -31,6 +38,27 @@ function checkId(id) {
   if (typeof id !== "string" || id.length < 8 || id.length > 64 || !/^[\w-]+$/.test(id)) throw new HttpError(400, "identifiant invalide");
   return hash(id);
 }
+
+/** Valeurs permises (mêmes listes que ios/…/MascotLook.swift et web/…/look.ts). */
+export const LOOK = {
+  body: ["creme", "nuage", "peche", "bonbon", "citron", "menthe", "ciel", "lavande"],
+  hat: ["none", "casquette", "bonnet", "beret", "chapeau", "chantier", "couronne"],
+  glasses: ["none", "soleil", "rondes", "aviateur", "carrees"],
+  face: ["doux", "rieur", "malin", "timide", "cool"],
+  neck: ["none", "noeud", "echarpe", "bandana", "cravate", "medaille"],
+  ride: ["nuit", "glacier", "rouge", "orange", "soleil", "sapin", "ocean", "prune"],
+};
+
+export function cleanLook(v) {
+  if (!v || typeof v !== "object") throw new HttpError(400, "apparence invalide");
+  const out = {};
+  for (const [k, allowed] of Object.entries(LOOK)) out[k] = allowed.includes(v[k]) ? v[k] : allowed[0];
+  out.name = cleanName(v.name).slice(0, 16);
+  return out;
+}
+
+const CODE = /^\d{6}$/;
+const MAX_LOOKS = 50_000;
 
 export async function register({ route, store, log }) {
   const col = await store.collection("mascot-weekly", { week: weekKey(), entries: {} });
@@ -84,4 +112,35 @@ export async function register({ route, store, log }) {
     const { week, top, total } = ranking(null);
     return { week, top, total };
   }, { limit: 30 });
+
+  // --- apparence ---
+  const looks = await store.collection("mascot-looks", {});
+  // collection du module friends (même objet en mémoire : `store` met les collections en cache)
+  const friendsDevices = async () => (await store.collection("friends", { devices: {} })).data.devices ?? {};
+
+  route.post("/mascot/look", ({ body }) => {
+    if (!body || typeof body !== "object") throw new HttpError(400, "corps manquant");
+    // le module friends range les appareils par identifiant en minuscules
+    const h = checkId(typeof body.id === "string" ? body.id.toLowerCase() : body.id);
+    if (!looks.data[h] && Object.keys(looks.data).length >= MAX_LOOKS) throw new HttpError(503, "plus de place");
+    looks.data[h] = { look: cleanLook(body.look), t: Date.now() };
+    looks.save();
+    return { ok: true };
+  }, { limit: 20 });
+
+  route.get("/mascot/looks", async ({ query }) => {
+    const list = (k, re) => String(query?.[k] ?? "").split(",").map((c) => c.trim()).filter((c) => re.test(c)).slice(0, 50);
+    const pids = new Set(list("pids", /^[\w-]{8,64}$/));
+    const codes = new Set(list("codes", CODE));
+    const out = {};
+    if (pids.size || codes.size) {
+      for (const [id, d] of Object.entries(await friendsDevices())) {
+        const key = pids.has(d.pid) ? d.pid : codes.has(d.code) ? d.code : null;
+        if (!key) continue;
+        const e = looks.data[hash(id)];
+        if (e) out[key] = e.look;
+      }
+    }
+    return { looks: out };
+  }, { limit: 60 });
 }

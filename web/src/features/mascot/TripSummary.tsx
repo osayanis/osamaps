@@ -1,10 +1,10 @@
-import { useShallow } from "zustand/react/shallow";
 import { useCore } from "../../core/store";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { Mascot } from "./Mascot";
 import { BadgeIcon } from "./BadgeIcon";
 import { badgeById, levelOf, nf } from "./data";
-import { useMascot, wornAccessories, type Trip } from "./engine";
+import { useMascot, type Trip } from "./engine";
+import { useShownLook } from "./look";
 
 export const kmh = (v: number) => `${Math.round(v)} km/h`;
 
@@ -13,7 +13,7 @@ export function TripSummary() {
   const panel = useCore((s) => s.panel);
   const data = useCore((s) => s.panelData) as Trip | null;
   const openPanel = useCore((s) => s.openPanel);
-  const worn = useMascot(useShallow(wornAccessories));
+  const look = useShownLook();
   const points = useMascot((s) => s.points);
   if (panel !== "trip-summary" || !data) return null;
   const t = data;
@@ -25,7 +25,7 @@ export function TripSummary() {
       <div className="mascot-grabber" aria-hidden="true" />
       <header className="mascot-sum-head">
         <div className="mascot-sum-hero">
-          <Mascot size={74} mood="happy" arms="up" hop={1} accessories={worn} />
+          <Mascot size={74} mood="happy" arms="up" hop={1} style={look} />
         </div>
         <div className="mascot-sum-title">
           <p className="mascot-eyebrow">Résumé du trajet</p>

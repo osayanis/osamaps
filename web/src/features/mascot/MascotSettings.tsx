@@ -1,16 +1,15 @@
 import { useCore } from "../../core/store";
 import { nickname } from "../../core/identity";
 import { Mascot } from "./Mascot";
-import { ACCESSORIES } from "./data";
-import { isUnlocked, setSetting, toggleAccessory, useMascot, wornAccessories, type Settings } from "./engine";
+import { setSetting, useMascot, type Settings } from "./engine";
+import { displayName, useShownLook } from "./look";
 import { leaveBoard, syncBoard } from "./leaderboard";
 
-/** Section « Mascotte » des réglages : accessoires portés, animations, messages, classement. */
+/** Section « Mascotte » des réglages : accès à l'éditeur, animations, messages, classement. */
 export function MascotSettings() {
   const s = useMascot();
-  const worn = wornAccessories(s);
+  const look = useShownLook();
   const set = useCore((x) => x.set);
-  const unlocked = ACCESSORIES.filter((a) => isUnlocked(a.id));
 
   const toggle = (k: keyof Settings) => {
     const v = !s.settings[k];
@@ -20,31 +19,17 @@ export function MascotSettings() {
 
   return (
     <section className="card mascot-settings">
-      <div className="mascot-set-head">
-        <Mascot size={40} crop="head" accessories={worn} />
+      <button
+        className="mascot-set-head mascot-set-edit"
+        onClick={() => { set({ settingsOpen: false }); useCore.getState().openPanel("mascot-editor"); }}
+      >
+        <Mascot size={44} crop="head" style={look} />
         <div>
-          <h3>Mascotte</h3>
+          <h3>{displayName(look)}</h3>
           <p className="mascot-dim mascot-small">Elle te représente sur la carte.</p>
         </div>
-      </div>
-
-      <div className="mascot-set-row mascot-set-col">
-        <span>Accessoires</span>
-        {unlocked.length === 0 ? (
-          <span className="mascot-dim mascot-small">Le premier se débloque au niveau 2.</span>
-        ) : (
-          <div className="mascot-chips">
-            {unlocked.map((a) => (
-              <button key={a.id} className={`mascot-chip${worn.includes(a.id) ? " is-on" : ""}`} aria-pressed={worn.includes(a.id)} onClick={() => toggleAccessory(a.id)}>
-                {a.name}
-              </button>
-            ))}
-          </div>
-        )}
-        <button className="btn-ghost mascot-small" onClick={() => { set({ settingsOpen: false }); useCore.getState().openPanel("profile"); }}>
-          Voir tous les accessoires
-        </button>
-      </div>
+        <span className="mascot-set-cta">Personnaliser</span>
+      </button>
 
       <Toggle label="Animations" hint="Rebond, clignements, petits sauts" on={s.settings.animations} onChange={() => toggle("animations")} />
       <Toggle label="Messages de la mascotte" hint="Rares, jamais pendant une manœuvre" on={s.settings.talk} onChange={() => toggle("talk")} />

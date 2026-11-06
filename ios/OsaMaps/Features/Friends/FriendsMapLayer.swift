@@ -1,5 +1,6 @@
 import MapKit
 import UIKit
+import SwiftUI
 
 /// Marqueurs des amis qui partagent leur position : pastille à initiales, flèche de cap,
 /// étiquette « Léa · 18 h 42 » quand il conduit. Toucher un marqueur ouvre la fiche de l'ami.
@@ -80,6 +81,8 @@ final class FriendsAnnotationView: MKAnnotationView {
     private let capHolder = UIView()
     private let dot = UILabel()
     private let label = FriendsPaddedLabel()
+    /// La mascotte personnalisée de l'ami par-dessus le rond (module mascot) ; vide tant qu'elle n'est pas connue.
+    private let face = UIHostingController(rootView: FriendsMarkerFace(pid: ""))
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -110,6 +113,11 @@ final class FriendsAnnotationView: MKAnnotationView {
         dot.layer.masksToBounds = true
         dot.layer.borderWidth = 2.5
         addSubview(dot)
+        face.view.frame = dot.frame.insetBy(dx: 2.5, dy: 2.5)
+        face.view.backgroundColor = .clear
+        face.view.isUserInteractionEnabled = false
+        face.safeAreaRegions = []
+        addSubview(face.view)
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.5
         layer.shadowRadius = 7
@@ -133,7 +141,8 @@ final class FriendsAnnotationView: MKAnnotationView {
         let loc = f.loc
         let driving = loc?.drive != nil
         let ok = UIColor(red: 0.204, green: 0.78, blue: 0.349, alpha: 1)
-        dot.text = FriendsUtil.initials(f.name)
+        dot.text = MascotFriendLooks.shared.look(f.pid) == nil ? FriendsUtil.initials(f.name) : nil
+        if face.rootView.pid != f.pid { face.rootView = FriendsMarkerFace(pid: f.pid) }
         dot.layer.borderColor = (driving ? ok : UIColor(red: 0.039, green: 0.039, blue: 0.059, alpha: 1)).cgColor
         cap.fillColor = (driving ? ok : .white).cgColor
         if let h = loc?.heading, (loc?.speed ?? 0) > 0.5 {
@@ -147,6 +156,18 @@ final class FriendsAnnotationView: MKAnnotationView {
         let size = label.intrinsicContentSize
         label.frame = CGRect(x: (bounds.width - size.width) / 2, y: 56, width: size.width, height: size.height)
         accessibilityLabel = "\(f.name), \(FriendsUtil.statusLine(f))"
+    }
+}
+
+/// Contenu SwiftUI du marqueur : la tête de la mascotte de l'ami (rien tant qu'elle n'est pas connue).
+struct FriendsMarkerFace: View {
+    var pid: String
+    var body: some View {
+        if !pid.isEmpty {
+            // fond opaque : cache les initiales du rond si la mascotte arrive après coup
+            MascotFriendFace(pid: pid, size: 31) { Color.clear }
+                .background(Circle().fill(MascotFriendLooks.shared.looks[pid] == nil ? .clear : Color(white: 0.93)))
+        }
     }
 }
 

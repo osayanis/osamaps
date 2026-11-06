@@ -262,7 +262,8 @@ struct MascotPinView: View {
                          size: size,
                          hop: live.hop,
                          kart: driving || live.moving,
-                         accessories: m.worn,
+                         style: MascotLookStore.shared.shown,
+                         vehicle: Prefs.shared.vehicle.kind,
                          bounce: live.moving && !live.sleeping,
                          animated: m.settings.animations)
             if live.sleeping {
