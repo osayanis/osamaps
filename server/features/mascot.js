@@ -5,9 +5,12 @@
 //   POST /mascot/leave { id }                     → { ok: true }
 //   GET  /mascot/leaderboard                      → { week, top, total }
 // Apparence de la mascotte (éditeur « Ma mascotte »), pour que les amis la voient :
-//   POST /mascot/look { id, code, look }   → { ok: true }   (le code ami appartient au premier appareil qui l'envoie)
-//   GET  /mascot/looks?codes=123456,654321 → { looks: { "123456": { body, hat, glasses, face, neck, ride, name } } }
-// On garde : code ami (6 chiffres, déjà connu des amis), empreinte de l'identifiant, apparence. Rien d'autre.
+//   POST /mascot/look { id, look }        → { ok: true }
+//   GET  /mascot/looks?pids=a,b           → { looks: { "<pid>": { body, hat, glasses, face, neck, ride, name } } }
+//   GET  /mascot/looks?codes=123456,…     → idem, indexé par code ami
+// Rangée par empreinte de l'identifiant d'appareil (jamais renvoyée). Le pid et le code ami viennent du module
+// friends (même identifiant d'appareil) : c'est toujours le code ATTRIBUÉ par le serveur, et personne ne peut
+// prendre le code d'un autre. On garde : empreinte, apparence, date. Rien d'autre.
 import { createHash } from "node:crypto";
 import { HttpError } from "../lib/router.js";
 
@@ -112,24 +115,32 @@ export async function register({ route, store, log }) {
 
   // --- apparence ---
   const looks = await store.collection("mascot-looks", {});
+  // collection du module friends (même objet en mémoire : `store` met les collections en cache)
+  const friendsDevices = async () => (await store.collection("friends", { devices: {} })).data.devices ?? {};
 
   route.post("/mascot/look", ({ body }) => {
     if (!body || typeof body !== "object") throw new HttpError(400, "corps manquant");
-    const h = checkId(body.id);
-    const code = String(body.code ?? "");
-    if (!CODE.test(code)) throw new HttpError(400, "code invalide");
-    const prev = looks.data[code];
-    if (prev && prev.h !== h) throw new HttpError(403, "code déjà utilisé");
-    if (!prev && Object.keys(looks.data).length >= MAX_LOOKS) throw new HttpError(503, "plus de place");
-    looks.data[code] = { h, look: cleanLook(body.look), t: Date.now() };
+    // le module friends range les appareils par identifiant en minuscules
+    const h = checkId(typeof body.id === "string" ? body.id.toLowerCase() : body.id);
+    if (!looks.data[h] && Object.keys(looks.data).length >= MAX_LOOKS) throw new HttpError(503, "plus de place");
+    looks.data[h] = { look: cleanLook(body.look), t: Date.now() };
     looks.save();
     return { ok: true };
   }, { limit: 20 });
 
-  route.get("/mascot/looks", ({ query }) => {
-    const codes = String(query?.codes ?? "").split(",").map((c) => c.trim()).filter((c) => CODE.test(c)).slice(0, 50);
+  route.get("/mascot/looks", async ({ query }) => {
+    const list = (k, re) => String(query?.[k] ?? "").split(",").map((c) => c.trim()).filter((c) => re.test(c)).slice(0, 50);
+    const pids = new Set(list("pids", /^[\w-]{8,64}$/));
+    const codes = new Set(list("codes", CODE));
     const out = {};
-    for (const c of codes) { const e = looks.data[c]; if (e) out[c] = e.look; }
+    if (pids.size || codes.size) {
+      for (const [id, d] of Object.entries(await friendsDevices())) {
+        const key = pids.has(d.pid) ? d.pid : codes.has(d.code) ? d.code : null;
+        if (!key) continue;
+        const e = looks.data[hash(id)];
+        if (e) out[key] = e.look;
+      }
+    }
     return { looks: out };
   }, { limit: 60 });
 }
