@@ -238,7 +238,7 @@ final class TrafficMapController {
     }
 
     /// Évènements : seulement à partir du zoom 7, filtrés selon le zoom (au loin, seulement l'important),
-    /// mis à jour par différence (pas de clignotement). MapKit regroupe les pastilles trop proches.
+    /// mis à jour par différence (pas de clignotement), regroupées sur une grille d'écran quand elles sont denses.
     private func updateEventVisibility() {
         guard let map else { return }
         let z = Self.zoom(of: map)
@@ -247,15 +247,16 @@ final class TrafficMapController {
         if show { visibleEvents = events.filter { Self.visible($0.properties, zoom: z) } }
         updateEventLines(show && z >= Self.eventLinesMinZoom ? visibleEvents : [])
 
-        // Regroupement maison sur une grille d'écran de 46 pt (palier de zoom arrondi au demi, pour que
-        // les groupes ne changent pas à chaque petit mouvement). L'important n'est jamais regroupé.
+        // Regroupement maison sur une grille d'écran (64 pt en vue large, 46 pt de près ; palier de zoom
+        // arrondi au demi, pour que les groupes ne changent pas à chaque petit mouvement).
+        // L'important n'est jamais regroupé de près (en ville, les rues barrées sont trop nombreuses en vue large).
         let zq = (z * 2).rounded() / 2
-        let cell = 46 * pow(2, 20 - zq)
+        let cell = (zq < 13 ? 64 : 46) * pow(2, 20 - zq)
         var wanted: [String: () -> MKPointAnnotation] = [:]
         var buckets: [String: [TrafficEvent]] = [:]
         for e in visibleEvents {
             guard let c = e.coordinate else { continue }
-            if Self.major(e.properties) || z >= 15.5 {
+            if (Self.major(e.properties) && z >= 13) || z >= 15.5 {
                 let p = e.properties
                 wanted["e:\(p.id)|\(p.severity)|\(p.title)"] = { TrafficEventAnnotation(props: p, coordinate: c) }
                 continue
