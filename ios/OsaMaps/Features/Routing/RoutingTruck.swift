@@ -25,7 +25,11 @@ import Foundation
 ///  de fête : toute la journée ;
 ///  samedis d'été (2026 : 11, 18, 25 juillet, 1er et 8 août) : 7 h → 19 h, qui REMPLACE le 22 h → 24 h ;
 ///  hiver en Auvergne-Rhône-Alpes, certains axes alpins (2026 : 7, 14, 21, 28 février, 7 mars) : 7 h → 18 h + 22 h → 24 h.
-///  Non géré : le régime propre aux autoroutes d'Île-de-France (art. 3), les jours fériés locaux d'Alsace-Moselle.
+///  Île-de-France (art. 3), sur A6a/A6b jusqu'à la RN104, A106, A10 jusqu'à la RN20, A13 jusqu'à Poissy-Orgeval,
+///  A12 de Rocquencourt à la RN10 : Paris → province vendredi 16-21 h, veille de fête 16-22 h, samedi 10-18 h,
+///  dimanche et férié 22-24 h ; province → Paris lundi ou lendemain de fête 6-10 h, dimanche et férié 22-24 h.
+///  Approximation : tronçon = manœuvre sur ces autoroutes dans un cadre autour de Paris, sens = s'éloigne de Paris ou non.
+///  Non géré : les jours fériés locaux d'Alsace-Moselle.
 enum RoutingTruck {
 
     // MARK: Vitesses
@@ -207,6 +211,104 @@ enum RoutingTruck {
         return merged
             .filter { $0.0 < end && $0.1 > start }
             .map { Ban(start: $0.0, end: $0.1, label: label($0.0, $0.1), regional: $0.2) }
+    }
+
+    // MARK: Île-de-France (art. 3)
+
+    enum IdfDir: Sendable { case out, into }
+    /// Passage sur les autoroutes d'Île-de-France : secondes après le départ.
+    struct IdfPass: Sendable { var dir: IdfDir; var from: Double; var to: Double }
+
+    private static let parisCenter = Coord(lat: 48.8566, lng: 2.3522)
+    private static func inIdf(_ c: Coord) -> Bool { c.lat > 48.62 && c.lat < 48.98 && c.lng > 1.98 && c.lng < 2.56 }
+    private static func isIdfRoad(_ street: String?) -> Bool {
+        guard let s = street?.trimmingCharacters(in: .whitespaces).uppercased().replacingOccurrences(of: " ", with: "") else { return false }
+        return ["A6", "A6A", "A6B", "A10", "A12", "A13", "A106"].contains(s)
+    }
+
+    static func idfPassages(_ r: Route) -> [IdfPass] {
+        var out: [IdfPass] = []
+        var t = 0.0
+        for (i, m) in r.maneuvers.enumerated() {
+            let t0 = t
+            t += m.time
+            guard isIdfRoad(m.street), m.shapeIndex < r.coords.count else { continue }
+            let end = min(i + 1 < r.maneuvers.count ? r.maneuvers[i + 1].shapeIndex : r.coords.count - 1, r.coords.count - 1)
+            guard end > m.shapeIndex else { continue }
+            var d = 0.0
+            var first: (d: Double, p: Coord)?, last: (d: Double, p: Coord)?
+            for k in m.shapeIndex...end {
+                if k > m.shapeIndex { d += Geo.distance(r.coords[k - 1].coordinate, r.coords[k].coordinate) }
+                if inIdf(r.coords[k]) {
+                    if first == nil { first = (d, r.coords[k]) }
+                    last = (d, r.coords[k])
+                }
+            }
+            guard let first, let last, d > 0 else { continue }
+            let gap = Geo.distance(parisCenter.coordinate, last.p.coordinate) - Geo.distance(parisCenter.coordinate, first.p.coordinate)
+            guard abs(gap) >= 500 else { continue }
+            let dir: IdfDir = gap > 0 ? .out : .into
+            let from = t0 + m.time * first.d / d, to = t0 + m.time * last.d / d
+            if let prev = out.last, prev.dir == dir, from - prev.to < 120 {
+                out[out.count - 1].to = to
+            } else {
+                out.append(IdfPass(dir: dir, from: from, to: to))
+            }
+        }
+        return out
+    }
+
+    /// Plages propres à l'Île-de-France (en plus du régime national), heures locales.
+    static func idfDayBans(_ day: Date, _ dir: IdfDir) -> [(from: Int, to: Int)] {
+        let c = cal
+        let wd = c.component(.weekday, from: day) // 1 = dimanche
+        let next = { (n: Int) in c.date(byAdding: .day, value: n, to: day).map(isHoliday) ?? false }
+        let hol = isHoliday(day), nextHol = next(1), prevHol = next(-1)
+        let offDay = wd == 1 || hol
+        // veille de fête : y compris le samedi avant le dimanche de Pâques / de Pentecôte (calendrier officiel)
+        let eve = nextHol || (wd == 7 && next(2))
+        var out: [(Int, Int)] = []
+        if offDay { out.append((22, 24)) }
+        switch dir {
+        case .out:
+            if wd == 6 && !hol { out.append((16, 21)) }
+            if wd == 7 && !hol { out.append((10, 18)) }
+            if eve && !offDay { out.append((16, 22)) }
+        case .into:
+            if !offDay && (wd == 2 || prevHol) { out.append((6, 10)) }
+        }
+        // plages qui se chevauchent fusionnées (samedi veille de Pâques : 10-18 h + 16-22 h → 10-22 h)
+        var merged: [(from: Int, to: Int)] = []
+        for w in out.sorted(by: { $0.0 < $1.0 }) {
+            if let l = merged.last, w.0 <= l.to { merged[merged.count - 1].to = max(l.to, w.1) } else { merged.append((w.0, w.1)) }
+        }
+        return merged
+    }
+
+    private static func idfLabel(_ d: IdfDir) -> String {
+        d == .out ? "les autoroutes de sortie d'Île-de-France vers la province" : "les autoroutes d'entrée en Île-de-France vers Paris"
+    }
+
+    /// Interdictions d'Île-de-France qui tombent pendant les passages du trajet sur ces autoroutes.
+    static func idfBans(start: Date, passes: [IdfPass]) -> [Ban] {
+        let c = cal
+        var res: [Ban] = []
+        for p in passes {
+            let a = start.addingTimeInterval(p.from), b = start.addingTimeInterval(p.to + 60)
+            var day = c.startOfDay(for: a)
+            while day <= b {
+                for w in idfDayBans(day, p.dir) {
+                    guard let s = c.date(byAdding: .hour, value: w.from, to: day),
+                          let e = c.date(byAdding: .hour, value: w.to, to: day) else { continue }
+                    let lab = idfLabel(p.dir)
+                    if s < b, e > a, !res.contains(where: { $0.start == s && $0.regional == lab }) {
+                        res.append(Ban(start: s, end: e, label: label(s, e), regional: lab))
+                    }
+                }
+                day = c.date(byAdding: .day, value: 1, to: day) ?? day.addingTimeInterval(86_400)
+            }
+        }
+        return res
     }
 
     private static func label(_ s: Date, _ e: Date) -> String {

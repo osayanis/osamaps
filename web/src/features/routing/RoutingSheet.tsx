@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useCore, type Route } from "../../core/store";
 import { usePrefs, VEHICLE_LABELS, type Vehicle } from "../../core/prefs";
-import { bansApply, bansBetween } from "./truck";
+import { bansApply, bansBetween, idfBans, idfPassages } from "./truck";
 import { formatDistance, formatDuration, formatEta } from "../../core/geometry";
 import { useRouting, routing, localStamp, formatStamp, placeFrom, type DepartChoice } from "./state";
 import { addStop, cancelPreview, computePreview, moveStop, removeStop, selectRoute, setDepart, startDrive } from "./controller";
@@ -257,7 +257,10 @@ function TruckNotices({ route, vehicle, depart, departAt }: { route: Route; vehi
   const end = new Date(start.getTime() + route.duration * 1000);
   const now = Date.now();
   const bans = bansApply(vehicle)
-    ? bansBetween(start, end).filter((b) => !b.regional || route.coords.some(([lng, lat]) => lat > 44.6 && lat < 46.5 && lng > 4.7 && lng < 7.2))
+    ? [
+      ...bansBetween(start, end).filter((b) => !b.regional || route.coords.some(([lng, lat]) => lat > 44.6 && lat < 46.5 && lng > 4.7 && lng < 7.2)),
+      ...idfBans(start, idfPassages(route)),
+    ]
     : [];
   if (vehicle.kind !== "superheavy" && !bans.length) return null;
   return (
@@ -268,7 +271,7 @@ function TruckNotices({ route, vehicle, depart, departAt }: { route: Route; vehi
         </p>
       )}
       {bans.map((b) => (
-        <div key={b.start.getTime()} className="routing-truck-note" role="alert">
+        <div key={`${b.start.getTime()}-${b.regional ?? ""}`} className="routing-truck-note" role="alert">
           <b>{b.start.getTime() <= now && b.end.getTime() > now ? "Interdiction en cours" : "Interdiction de circuler"}</b>
           <span>{b.regional ? `Sur ${b.regional}, c` : "C"}irculation interdite aux poids lourds de plus de 7,5 t {b.label}. Ton trajet tombe dans cette période (sauf dérogation).</span>
         </div>

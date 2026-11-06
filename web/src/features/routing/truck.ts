@@ -1,4 +1,6 @@
 import type { Vehicle } from "../../core/prefs";
+import type { LngLat, Route } from "../../core/store";
+import { distance } from "../../core/geometry";
 
 /**
  * Règles poids lourds (France), même logique que ios/…/Routing/RoutingTruck.swift.
@@ -15,7 +17,11 @@ import type { Vehicle } from "../../core/prefs";
  * Interdictions > 7,5 t (arrêté du 16 avril 2021 art. 1-2, calendrier 2026 : arrêté du 26 décembre 2025) :
  *  samedi et veille de fête 22-24 h ; dimanche et férié 0-22 h ; samedi férié ou dimanche veille de fête 0-24 h ;
  *  samedis d'été 7-19 h (remplace 22-24 h) ; hiver Auvergne-Rhône-Alpes (axes alpins) 7-18 h + 22-24 h.
- *  Non géré : régime des autoroutes d'Île-de-France (art. 3), fériés d'Alsace-Moselle.
+ *  Île-de-France (art. 3), sur A6a/A6b jusqu'à la RN104, A106, A10 jusqu'à la RN20, A13 jusqu'à Poissy-Orgeval,
+ *  A12 de Rocquencourt à la RN10 : Paris → province vendredi 16-21 h, veille de fête 16-22 h, samedi 10-18 h,
+ *  dimanche et férié 22-24 h ; province → Paris lundi ou lendemain de fête 6-10 h, dimanche et férié 22-24 h.
+ *  Approximation : tronçon = manœuvre sur ces autoroutes dans un cadre autour de Paris, sens = s'éloigne de Paris ou non.
+ *  Non géré : fériés d'Alsace-Moselle.
  */
 
 const isTruck = (v: Vehicle) => v.kind !== "car";
@@ -156,4 +162,83 @@ export function bansBetween(start: Date, end: Date): Ban[] {
     else merged.push({ ...r });
   }
   return merged.filter((r) => r.s < end && r.e > start).map((r) => ({ start: r.s, end: r.e, label: label(r.s, r.e), regional: r.regional }));
+}
+
+// ——— Île-de-France (art. 3) ——————————————————————————————————————————————
+
+const PARIS: LngLat = [2.3522, 48.8566];
+const IDF_ROAD = /^A ?(6[AB]?|10|12|13|106)$/i;
+const inIdf = ([lng, lat]: LngLat) => lat > 48.62 && lat < 48.98 && lng > 1.98 && lng < 2.56;
+export type IdfDir = "out" | "in";
+/** Passage sur les autoroutes d'Île-de-France : secondes après le départ. */
+export interface IdfPass { dir: IdfDir; from: number; to: number }
+
+export function idfPassages(r: Route): IdfPass[] {
+  const out: IdfPass[] = [];
+  let t = 0;
+  r.maneuvers.forEach((m, i) => {
+    const t0 = t;
+    t += m.time;
+    if (!m.street || !IDF_ROAD.test(m.street.trim())) return;
+    const end = Math.min(r.maneuvers[i + 1]?.shapeIndex ?? r.coords.length - 1, r.coords.length - 1);
+    let d = 0, first: { d: number; p: LngLat } | null = null, last: { d: number; p: LngLat } | null = null;
+    for (let k = m.shapeIndex; k <= end; k++) {
+      if (k > m.shapeIndex) d += distance(r.coords[k - 1], r.coords[k]);
+      if (inIdf(r.coords[k])) { if (!first) first = { d, p: r.coords[k] }; last = { d, p: r.coords[k] }; }
+    }
+    if (!first || !last || d <= 0) return;
+    const gap = distance(PARIS, last.p) - distance(PARIS, first.p);
+    if (Math.abs(gap) < 500) return;
+    const dir: IdfDir = gap > 0 ? "out" : "in";
+    const from = t0 + (m.time * first.d) / d, to = t0 + (m.time * last.d) / d;
+    const prev = out[out.length - 1];
+    if (prev && prev.dir === dir && from - prev.to < 120) prev.to = to;
+    else out.push({ dir, from, to });
+  });
+  return out;
+}
+
+/** Plages propres à l'Île-de-France (en plus du régime national), heures locales. */
+export function idfDayBans(day: Date, dir: IdfDir): { from: number; to: number }[] {
+  const wd = day.getDay();
+  const hol = isHoliday(day), nextHol = isHoliday(addDays(day, 1)), prevHol = isHoliday(addDays(day, -1));
+  const offDay = wd === 0 || hol;
+  // veille de fête : y compris le samedi avant le dimanche de Pâques / de Pentecôte (calendrier officiel)
+  const eve = nextHol || (wd === 6 && isHoliday(addDays(day, 2)));
+  const out: { from: number; to: number }[] = [];
+  if (offDay) out.push({ from: 22, to: 24 });
+  if (dir === "out") {
+    if (wd === 5 && !hol) out.push({ from: 16, to: 21 });
+    if (wd === 6 && !hol) out.push({ from: 10, to: 18 });
+    if (eve && !offDay) out.push({ from: 16, to: 22 });
+  } else if (!offDay && (wd === 1 || prevHol)) out.push({ from: 6, to: 10 });
+  // plages qui se chevauchent fusionnées (samedi veille de Pâques : 10-18 h + 16-22 h → 10-22 h)
+  out.sort((a, b) => a.from - b.from);
+  return out.reduce<{ from: number; to: number }[]>((acc, w) => {
+    const last = acc[acc.length - 1];
+    if (last && w.from <= last.to) last.to = Math.max(last.to, w.to); else acc.push({ ...w });
+    return acc;
+  }, []);
+}
+
+const IDF_LABEL: Record<IdfDir, string> = {
+  out: "les autoroutes de sortie d'Île-de-France vers la province",
+  in: "les autoroutes d'entrée en Île-de-France vers Paris",
+};
+
+/** Interdictions d'Île-de-France qui tombent pendant les passages du trajet sur ces autoroutes. */
+export function idfBans(start: Date, passes: IdfPass[]): Ban[] {
+  const res: Ban[] = [];
+  for (const p of passes) {
+    const a = new Date(start.getTime() + p.from * 1000), b = new Date(start.getTime() + p.to * 1000 + 60_000);
+    for (let day = addDays(new Date(a.getFullYear(), a.getMonth(), a.getDate()), 0); day <= b; day = addDays(day, 1)) {
+      for (const w of idfDayBans(day, p.dir)) {
+        const s = new Date(day.getFullYear(), day.getMonth(), day.getDate(), w.from), e = new Date(day.getFullYear(), day.getMonth(), day.getDate(), w.to);
+        if (s < b && e > a && !res.some((r) => r.start.getTime() === s.getTime() && r.regional === IDF_LABEL[p.dir])) {
+          res.push({ start: s, end: e, label: label(s, e), regional: IDF_LABEL[p.dir] });
+        }
+      }
+    }
+  }
+  return res;
 }

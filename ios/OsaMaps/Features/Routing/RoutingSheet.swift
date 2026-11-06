@@ -565,11 +565,12 @@ private struct RoutingTruckNotices: View {
             start = depart.type == 1 ? d : d.addingTimeInterval(-route.duration)
         }
         let end = start.addingTimeInterval(route.duration)
-        return RoutingTruck.bans(from: start, to: end).filter { b in
+        let national = RoutingTruck.bans(from: start, to: end).filter { b in
             guard b.regional != nil else { return true }
             // hiver Auvergne-Rhône-Alpes : seulement si le tracé passe par les Alpes du Nord
             return route.coords.contains { $0.lat > 44.6 && $0.lat < 46.5 && $0.lng > 4.7 && $0.lng < 7.2 }
         }
+        return national + RoutingTruck.idfBans(start: start, passes: RoutingTruck.idfPassages(route))
     }
 
     private func notice(_ icon: String, _ text: String, title: String? = nil) -> some View {
