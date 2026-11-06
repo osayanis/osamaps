@@ -61,6 +61,14 @@ function firstSymbolLayer(map: MLMap) {
   return map.getStyle().layers?.find((l) => l.type === "symbol")?.id;
 }
 
+/** Premier libellé APRÈS les routes : les tronçons surlignés passent sur la chaussée, sous les noms. */
+function labelAboveRoads(map: MLMap) {
+  const layers = map.getStyle().layers ?? [];
+  let last = -1;
+  layers.forEach((l, i) => { if (l.type === "line" && "source-layer" in l && l["source-layer"] === "transportation") last = i; });
+  return layers.slice(last + 1).find((l) => l.type === "symbol")?.id ?? firstSymbolLayer(map);
+}
+
 function sliceLine(coords: LngLat[], cum: number[], a: number, b: number): LngLat[] {
   const out: LngLat[] = [];
   const at = (d: number): LngLat => {
@@ -114,10 +122,10 @@ export function SafetyLayers() {
           layout: { "line-cap": "round", "line-join": "round" },
           paint: {
             "line-color": DANGER,
-            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.3, 12, 0.5],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.35, 12, 0.55],
             "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3, 14, 7, 17, 12],
           },
-        }, before);
+        }, labelAboveRoads(map));
       }
       if (!map.getLayer("safety-zone-clusters")) {
         map.addLayer({
