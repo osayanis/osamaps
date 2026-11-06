@@ -40,7 +40,7 @@ final class TrafficMapController {
         MapLayer(id: "traffic", zIndex: 20,
                  attach: { [unowned self] map in attach(map) },
                  renderer: { overlay in
-                     if let o = overlay as? TrafficEventLineOverlay { return TrafficEventLineRenderer(overlay: o) }
+                     if let o = overlay as? TrafficEventLineOverlay { return TrafficEventLineRenderer.make(o) }
                      guard let o = overlay as? TrafficLinesOverlay else { return nil }
                      return TrafficLinesRenderer(overlay: o)
                  },
@@ -513,13 +513,16 @@ final class TrafficEventLineOverlay: MKPolyline, @unchecked Sendable {
     }
 }
 
-final class TrafficEventLineRenderer: MKPolylineRenderer, @unchecked Sendable {
-    init(overlay: TrafficEventLineOverlay) {
-        super.init(polyline: overlay)
-        strokeColor = overlay.kind == .closure ? UIColor(red: 1.0, green: 0.271, blue: 0.227, alpha: 0.95) : UIColor(red: 1.0, green: 0.624, blue: 0.039, alpha: 0.9)
-        lineWidth = overlay.kind == .closure ? 5 : 4
-        lineDashPattern = overlay.kind == .closure ? [2, 7] : [6, 6]
-        lineCap = .round
+/// Rendu pointillé. Pas de sous-classe de MKPolylineRenderer : son init(polyline:) rappelle
+/// init(overlay:) côté Objective-C, ce qui plantait (« unimplemented initializer ») dès qu'un tracé s'affichait.
+enum TrafficEventLineRenderer {
+    static func make(_ overlay: TrafficEventLineOverlay) -> MKPolylineRenderer {
+        let r = MKPolylineRenderer(polyline: overlay)
+        r.strokeColor = overlay.kind == .closure ? UIColor(red: 1.0, green: 0.271, blue: 0.227, alpha: 0.95) : UIColor(red: 1.0, green: 0.624, blue: 0.039, alpha: 0.9)
+        r.lineWidth = overlay.kind == .closure ? 5 : 4
+        r.lineDashPattern = overlay.kind == .closure ? [2, 7] : [6, 6]
+        r.lineCap = .round
+        return r
     }
 }
 
