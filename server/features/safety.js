@@ -111,6 +111,7 @@ function simplify(ring, tol) {
 // serveur), entre 15 % et 85 % et jamais près du milieu ; le tronçon n'a aucun sommet à l'emplacement de
 // l'appareil (seulement les nœuds OSM de la route et deux extrémités interpolées).
 export const SEG_ALGO = 1; // à incrémenter si le calcul change : tout est recalculé
+export const SEG_RETRY = 2; // à incrémenter pour ne recalculer que les replis (amélioration ponctuelle)
 export const SEG_ZOOM = 8; // tuiles servies au client (≈ 1,4° × 1°)
 const ROADS_ALL = "motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link";
 const ROADS_MAIN = "motorway|trunk|primary|secondary|tertiary|unclassified|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link";
@@ -206,7 +207,7 @@ const canGo = (w, d, travel) => travel == null || w.ow === 0 || (w.ow * d > 0) =
  * traverse les ronds-points par la sortie de la même route ou la plus en face).
  * Renvoie { pts (sans le point de départ), dist }.
  */
-export function walkRoad(g, start, dir, travel, max, kx) {
+export function walkRoad(g, start, dir, travel, max, kx, loose = false) {
   const out = [];
   let walked = 0;
   let k = start.k, w = g.ways[k];
@@ -231,7 +232,7 @@ export function walkRoad(g, start, dir, travel, max, kx) {
     if (dir > 0 ? j < w.pts.length - 1 : j > 0) { j += dir; continue; }
     // fin du way : la suite
     const hin = heading(w.pts[j - dir], w.pts[j], kx);
-    const next = nextWay(g, w.nodes[j], hin, road, w, seen, travel, kx);
+    const next = nextWay(g, w.nodes[j], hin, road, w, seen, travel, kx, loose);
     if (!next) break;
     if (next.round) {
       // rond-point : on en fait le tour (dans son sens) jusqu'à la sortie choisie
@@ -255,7 +256,7 @@ export function walkRoad(g, start, dir, travel, max, kx) {
 }
 
 /** Way suivant au nœud nd (arrivée avec le cap hin). */
-function nextWay(g, nd, hin, road, cur, seen, travel, kx) {
+function nextWay(g, nd, hin, road, cur, seen, travel, kx, loose) {
   let best = null;
   for (const [k2, j2] of g.byNode.get(nd) || []) {
     if (seen.has(k2)) continue;
@@ -273,7 +274,7 @@ function nextWay(g, nd, hin, road, cur, seen, travel, kx) {
       if (!canGo(w2, d2, travel)) continue;
       const turn = angDiff(hin, heading(w2.pts[j2], w2.pts[j2 + d2], kx));
       const same = sameRoad(road, w2);
-      if (turn > (same ? 100 : 60)) continue;
+      if (turn > (same ? 100 : loose ? 120 : 60)) continue;
       const score = turn - (same ? 100 : 0) - (w2.hw === cur.hw ? 15 : 0) + (w2.link && !cur.link ? 40 : 0);
       if (!best || score < best.score) best = { k: k2, j: j2, d: d2, round: false, score };
     }
@@ -395,6 +396,25 @@ function pointAlong(line, d, kx) {
   return line[line.length - 1];
 }
 
+/** Fraction (0–1) du point le plus proche de p le long de la ligne. */
+function fractionOn(line, p, kx) {
+  let acc = 0, best = null, total = 0;
+  for (let i = 1; i < line.length; i++) {
+    const ax = (line[i - 1][0] - p[0]) * kx, ay = (line[i - 1][1] - p[1]) * M_PER_DEG;
+    const dx = (line[i][0] - line[i - 1][0]) * kx, dy = (line[i][1] - line[i - 1][1]) * M_PER_DEG;
+    const l = Math.hypot(dx, dy), t = l ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (l * l))) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (!best || d < best.d) best = { d, along: acc + t * l };
+    acc += l;
+  }
+  total = acc;
+  return total > 0 ? best.along / total : 0.5;
+}
+
+/** Dernier garde-fou (sur la VRAIE position de l'appareil, pas le point d'accrochage) : l'appareil se
+ *  projette entre 12 et 88 % de chaque ligne, et pas près du milieu. */
+const fractionOk = (line, p, kx) => { const f = fractionOn(line, p, kx); return f >= 0.12 && f <= 0.88 && Math.abs(f - 0.5) >= 0.04; };
+
 /** Chaussée opposée d'une route à chaussées séparées : way à sens unique de même famille, à moins de
  *  70 m du point d'accrochage, de sens contraire. */
 function oppositeCarriageway(g, snap, kx) {
@@ -410,9 +430,9 @@ function oppositeCarriageway(g, snap, kx) {
   return angDiff(hA, hB) > 140 ? s : null;
 }
 
-function buildLine(g, snap, fdir, oneway, back, fwd, kx) {
-  const f = walkRoad(g, snap, fdir, oneway ? true : null, fwd, kx);
-  const b = walkRoad(g, snap, -fdir, oneway ? false : null, back, kx);
+function buildLine(g, snap, fdir, oneway, back, fwd, kx, loose = false) {
+  const f = walkRoad(g, snap, fdir, oneway ? true : null, fwd, kx, loose);
+  const b = walkRoad(g, snap, -fdir, oneway ? false : null, back, kx, loose);
   return [...b.pts.reverse(), ...f.pts];
 }
 
@@ -430,14 +450,20 @@ export function computeSegment(g, r, f) {
   const oneway = w.ow !== 0;
   const fdir = w.ow < 0 ? -1 : 1; // sens de circulation (ordre des nœuds si double sens)
   const far = 0.85 * L;
-  const availF = walkRoad(g, snap, fdir, oneway ? true : null, far, kx).dist;
-  const availB = walkRoad(g, snap, -fdir, oneway ? false : null, far, kx).dist;
-  const cut = cutLengths(f, L, availB, availF);
+  // 1er essai : on suit la route « tout droit » ; sinon (appareil à un carrefour, impasse…) on accepte
+  // des virages plus francs pour trouver de la route des deux côtés
+  let loose = false;
+  let cut = cutLengths(f, L, walkRoad(g, snap, -fdir, oneway ? false : null, far, kx).dist, walkRoad(g, snap, fdir, oneway ? true : null, far, kx).dist);
+  if (!cut) {
+    loose = true;
+    cut = cutLengths(f, L, walkRoad(g, snap, -fdir, oneway ? false : null, far, kx, true).dist, walkRoad(g, snap, fdir, oneway ? true : null, far, kx, true).dist);
+  }
   if (!cut) return null;
-  const aRaw = buildLine(g, snap, fdir, oneway, cut.back, cut.fwd, kx);
+  const aRaw = buildLine(g, snap, fdir, oneway, cut.back, cut.fwd, kx, loose);
   if (aRaw.length < 2) return null;
   const a = simplifyLine(aRaw, kx);
   const len = lineLength(aRaw, kx);
+  if (!fractionOk(aRaw, [r.lng, r.lat], kx) || !fractionOk(a, [r.lng, r.lat], kx)) return null;
   const out = { o: oneway ? 1 : 0, m: round5(pointAlong(aRaw, len / 2, kx)), len: Math.round(len), a };
   if (oneway) {
     // chaussée opposée : même étendue (l'appareil peut flasher dans l'autre sens, on ne le sait pas)
@@ -449,7 +475,8 @@ export function computeSegment(g, r, f) {
       const cb = cutLengths(1 - f, cut.back + cut.fwd, bB, bF);
       if (cb) {
         const bRaw = buildLine(g, s, bdir, true, cb.back, cb.fwd, kx);
-        if (bRaw.length >= 2) out.b = simplifyLine(bRaw, kx);
+        const b = bRaw.length >= 2 ? simplifyLine(bRaw, kx) : null;
+        if (b && fractionOk(bRaw, [r.lng, r.lat], kx) && fractionOk(b, [r.lng, r.lat], kx)) out.b = b;
       }
     }
   }
@@ -618,13 +645,26 @@ export async function register({ route, store, log }) {
         segCol.data = { resource, algo: SEG_ALGO, items: {} };
         buildZones();
       }
+      // garde-fou appliqué aussi aux tronçons déjà enregistrés (calculés par une version précédente)
+      let rejected = 0;
+      for (const [id, , , lat, lng] of radarsCol.data.radars) {
+        const it = segCol.data.items[id];
+        if (!it || it.fail) continue;
+        const kx = M_PER_DEG * Math.cos((lat * Math.PI) / 180);
+        if (!fractionOk(it.a, [lng, lat], kx)) { segCol.data.items[id] = { fail: 1 }; rejected++; }
+        else if (it.b && !fractionOk(it.b, [lng, lat], kx)) { delete it.b; rejected++; }
+      }
+      if (rejected) { log(`safety : ${rejected} tronçons écartés par le garde-fou, recalcul`); segCol.save(); buildZones(); }
       const only = (process.env.SAFETY_SEGMENTS_BBOX || "").split(",").map(Number);
       const inside = only.length === 4 && only.every(Number.isFinite)
         ? (lat, lng) => lng >= only[0] && lng <= only[2] && lat >= only[1] && lat <= only[3]
         : () => true;
       // groupés par secteur de ~0,3° : les routes d'un lot se recouvrent
       const todo = radarsCol.data.radars
-        .filter(([id, , , lat, lng]) => !segCol.data.items[id] && inside(lat, lng))
+        .filter(([id, , , lat, lng]) => {
+          const it = segCol.data.items[id];
+          return (!it || (it.fail && it.fail < SEG_RETRY)) && inside(lat, lng);
+        })
         .map(([id, type, vma, lat, lng]) => ({ id, lat, lng, kind: zoneKind(type, vma), cell: `${Math.floor(lat / 0.3)}:${Math.floor(lng / 0.3)}` }))
         .sort((a, b) => a.cell.localeCompare(b.cell) || a.lat - b.lat);
       if (!todo.length) return;
@@ -651,7 +691,7 @@ export async function register({ route, store, log }) {
         for (const r of batch) {
           let seg = null;
           try { seg = computeSegment(g, r, radarFraction(hmac("seg:" + r.id))); } catch (e) { log("safety : tronçon", r.id, e.message); }
-          segCol.data.items[r.id] = seg || { fail: 1 };
+          segCol.data.items[r.id] = seg || { fail: SEG_RETRY };
         }
         segCol.save();
         buildZones();
