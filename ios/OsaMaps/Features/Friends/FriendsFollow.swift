@@ -25,7 +25,7 @@ final class FriendsFollow {
     private init() {}
 
     func open(_ t: String) {
-        if let old = token, old != t { Socket.shared.emit("friends:trip:unwatch", ["token": old]) }
+        if let old = token, old != t { Socket.shared.emit("friends:trip:unwatch", ["token": old]); publish(state: "ended") }
         token = t
         state = .loading
         trip = nil
@@ -38,7 +38,7 @@ final class FriendsFollow {
     }
 
     func close() {
-        if let t = token { Socket.shared.emit("friends:trip:unwatch", ["token": t]) }
+        if let t = token { Socket.shared.emit("friends:trip:unwatch", ["token": t]); publish(state: "ended") }
         token = nil
         trip = nil
         FriendsFollowLayer.clear()
@@ -60,6 +60,7 @@ final class FriendsFollow {
             guard let self, self.matches(a.first) else { return }
             self.merge(a.first)
             self.state = .arrived
+            self.publish()
             emit(.toast(Toast(text: "\(self.trip?.name ?? "Ton ami") est bien arrivé", icon: "checkmark.circle.fill", tone: .good)))
             emit(.haptic("success"))
         })
@@ -68,6 +69,7 @@ final class FriendsFollow {
             let why = j["why"] as? String
             self.state = .ended
             self.message = why == "expired" ? "Le lien a expiré." : "Le partage du trajet est terminé."
+            self.publish(state: "ended")
         })
     }
 
@@ -89,6 +91,7 @@ final class FriendsFollow {
                 self.trip = FriendsTripView.merge(nil, tj)
                 self.state = self.trip?.arrivedAt != nil ? .arrived : .live
                 FriendsFollowLayer.draw(fit: true)
+                self.publish()
             }
         }
     }
@@ -97,6 +100,22 @@ final class FriendsFollow {
         guard matches(json) else { return }
         trip = FriendsTripView.merge(trip, json)
         FriendsFollowLayer.draw(fit: autoCam)
+        publish()
+    }
+
+    /// Pour la Live Activity « un ami arrive » (module live) : `.custom("friends:trip", …)`.
+    /// eta en millisecondes depuis 1970 (comme le serveur), remaining en mètres.
+    private func publish(state forced: String? = nil) {
+        guard let t = trip else {
+            if let forced, let tok = token { emit(.custom(name: "friends:trip", payload: ["token": tok, "state": forced])) }
+            return
+        }
+        var p = ["token": t.token, "name": t.name, "dest": t.destName,
+                 "state": forced ?? (t.arrivedAt != nil || state == .arrived ? "arrived" : "live"),
+                 "stale": t.arrivedAt == nil && Date().timeIntervalSince1970 * 1000 - t.updated > 90_000 ? "1" : "0"]
+        if let e = t.eta { p["eta"] = String(e) }
+        if let r = t.remaining { p["remaining"] = String(r) }
+        emit(.custom(name: "friends:trip", payload: p))
     }
 
     /// Le reste du tracé, depuis la voiture.

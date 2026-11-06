@@ -1,7 +1,8 @@
 import SwiftUI
 
 // Flèches de manœuvre dessinées (port des SVG de la version web, repère 48 × 48).
-// COPIE de OsaMaps/Features/Guidance/GuidanceArrow.swift (préfixe Live au lieu de Guidance ; l’extension ne voit pas le code de l’app) : garder les deux synchronisés.
+// COPIE de OsaMaps/Features/Guidance/GuidanceArrow.swift (préfixe Live au lieu de Guidance) : garder les deux synchronisés.
+// Dans Shared/ : compilée dans l’extension (Live Activity) ET dans l’app (écran d’aperçu DEBUG -livePreview).
 // `kind` = valeur brute de GuidanceKind (« right », « roundabout », « arrive-left »…).
 
 enum LiveArrowLayer { case main, dim, fill }
