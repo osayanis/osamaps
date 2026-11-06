@@ -114,6 +114,24 @@ function cleanRoute(body) {
   return req;
 }
 
+// Camions : un point posé sur une rue interdite aux PL (centre-ville, zone piétonne…) donne
+// « No path ». On réessaie en laissant Valhalla accrocher chaque point à une rue autorisée proche.
+async function valhallaRoute(req) {
+  try {
+    return await valhalla("route", req);
+  } catch (e) {
+    if (req.costing !== "truck" || e?.status !== 422) throw e;
+    for (const radius of [300, 1000]) {
+      try {
+        return await valhalla("route", { ...req, locations: req.locations.map((l) => ({ ...l, radius })) });
+      } catch (e2) {
+        if (e2?.status !== 422) throw e2;
+      }
+    }
+    throw e;
+  }
+}
+
 export async function register({ route, log }) {
   logFn = log;
   route.post("/routing/route", async ({ body }) => {
@@ -121,7 +139,7 @@ export async function register({ route, log }) {
     const k = "r" + key(req);
     const hit = cacheGet(k);
     if (hit) return hit;
-    const data = await queued(() => valhalla("route", req));
+    const data = await queued(() => valhallaRoute(req));
     cachePut(k, data, ROUTE_TTL);
     return data;
   }, { limit: 30 });
