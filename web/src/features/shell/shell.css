@@ -277,7 +277,7 @@ html.osa-side .mode-drive .slot-sheet { max-height: 45%; }
 .shell-veh-sheet {
   width: min(560px, 100%); max-height: calc(100dvh - 40px); display: flex; flex-direction: column;
   border-radius: var(--radius-l) var(--radius-l) 0 0; padding: 12px 18px calc(14px + env(safe-area-inset-bottom));
-  animation: shell-veh-up 280ms var(--ease-out) both;
+  animation: shell-veh-up 280ms var(--ease-out) both; background: var(--bg); backdrop-filter: none;
 }
 @keyframes shell-veh-up { from { transform: translateY(24px); opacity: 0; } }
 @keyframes shell-fade { from { opacity: 0; } }

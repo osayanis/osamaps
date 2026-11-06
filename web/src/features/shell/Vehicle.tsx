@@ -157,7 +157,11 @@ export function VehicleSheet() {
 function SheetBody() {
   const saved = usePrefs((s) => s.vehicle);
   const setPref = usePrefs((s) => s.setPref);
-  const [draft, setDraft] = useState<Vehicle>(saved);
+  const [draft, setDraftRaw] = useState<Vehicle>(saved);
+  const [touched, setTouched] = useState(false);
+  const setDraft = (v: Vehicle) => { setTouched(true); setDraftRaw(v); };
+  // profil arrivé après l'ouverture (paramètre de test, autre onglet) : on le reprend tant que rien n'est modifié
+  useEffect(() => { if (!touched) setDraftRaw(saved); }, [saved, touched]);
   const [dims, setDims] = useState(false);
   const truck = draft.kind !== "car";
 
