@@ -3,14 +3,16 @@ import maplibregl from "maplibre-gl";
 import { useCore } from "../../core/store";
 import { useFriends, followToken, type Friend } from "./store";
 import { initials, clock } from "./util";
+import { useFriendLooks, wantFriendLook } from "../mascot/friendLooks";
 
 /**
- * Marqueurs des amis qui partagent leur position : pastille avec initiales, flèche de cap,
+ * Marqueurs des amis qui partagent leur position : pastille (mascotte personnalisée ou initiales), flèche de cap,
  * étiquette « Léa · 18 h 42 » s'il conduit. Marqueurs DOM : ils survivent au changement de style.
  */
 export function FriendsLayer() {
   const map = useCore((s) => s.map);
   const friends = useFriends((s) => s.friends);
+  const faces = useFriendLooks((s) => s.faces);
   const markers = useRef(new Map<string, { marker: maplibregl.Marker; el: HTMLDivElement; heading: number | null }>());
 
   // orienter les flèches quand la carte tourne
@@ -43,18 +45,20 @@ export function FriendsLayer() {
         m = { marker, el, heading: null };
         markers.current.set(f.pid, m);
       }
-      paint(m.el, f, map.getBearing());
+      wantFriendLook(f.pid);
+      paint(m.el, f, map.getBearing(), faces[f.pid]);
       m.heading = f.loc.heading;
       m.marker.setLngLat([f.loc.lng, f.loc.lat]);
     }
     for (const [pid, m] of markers.current) if (!seen.has(pid)) { m.marker.remove(); markers.current.delete(pid); }
-  }, [map, friends]);
+  }, [map, friends, faces]);
 
   useEffect(() => () => { for (const m of markers.current.values()) m.marker.remove(); markers.current.clear(); }, []);
   return null;
 }
 
-function paint(el: HTMLDivElement, f: Friend, mapBearing: number) {
+/** `face` : la tête de sa mascotte personnalisée (SVG), à la place des initiales. */
+function paint(el: HTMLDivElement, f: Friend, mapBearing: number, face?: string) {
   const loc = f.loc!;
   const driving = !!loc.drive;
   const label = loc.drive?.eta ? `${f.name} · ${clock(loc.drive.eta)}` : f.name;
@@ -63,7 +67,7 @@ function paint(el: HTMLDivElement, f: Friend, mapBearing: number) {
   const cap = loc.heading != null && (loc.speed ?? 0) > 0.5
     ? `<span class="friends-marker-cap" style="transform:rotate(${loc.heading - mapBearing}deg)"><svg width="60" height="60" viewBox="0 0 60 60"><path d="M30 1.5l6.5 8h-13z" fill="currentColor"/></svg></span>`
     : "";
-  el.innerHTML = `${cap}<span class="friends-marker-dot">${escape(initials(f.name))}</span><span class="friends-marker-label">${escape(label)}</span>`;
+  el.innerHTML = `${cap}<span class="friends-marker-dot${face ? " has-mascot" : ""}">${face ?? escape(initials(f.name))}</span><span class="friends-marker-label">${escape(label)}</span>`;
 }
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

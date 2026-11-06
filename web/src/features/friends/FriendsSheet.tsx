@@ -11,6 +11,8 @@ import {
   initials, prettyCode, statusLine, midpoint, reverseName,
   IconClose, IconBack, IconChevron, IconCopy, IconShare, IconNav, IconMeet, IconLock, IconCheck,
 } from "./util";
+import { Mascot } from "../mascot/Mascot";
+import { useFriendLook } from "../mascot/friendLooks";
 
 const PANELS = ["friends", "friend", "share", "friends-invite"];
 
@@ -40,8 +42,14 @@ function Head({ title, back }: { title: string; back?: () => void }) {
   );
 }
 
-function Avatar({ name, live }: { name: string; live?: boolean }) {
-  return <span className={`friends-avatar${live ? " is-live" : ""}`}>{initials(name)}</span>;
+/** Pastille : la mascotte personnalisée de l'ami si on la connaît (pid), sinon ses initiales. */
+function Avatar({ name, live, pid }: { name: string; live?: boolean; pid?: string }) {
+  const look = useFriendLook(pid);
+  return (
+    <span className={`friends-avatar${live ? " is-live" : ""}${look ? " has-mascot" : ""}`}>
+      {look ? <Mascot crop="head" size={56} style={look} blink={false} /> : initials(name)}
+    </span>
+  );
 }
 
 /** Saisie du pseudo (affichée tant qu'il est vide, et dans les réglages). */
@@ -156,7 +164,7 @@ function FriendsList() {
           {friends.length === 0 && <p className="friends-muted">Pas encore d'amis. Donne ton code ou envoie ton lien d'invitation.</p>}
           {sorted.map((f) => (
             <button key={f.pid} className="friends-row friends-row-btn" onClick={() => core().openPanel("friend", { pid: f.pid })}>
-              <Avatar name={f.name} live={!!f.loc} />
+              <Avatar name={f.name} live={!!f.loc} pid={f.pid} />
               <div className="friends-row-text">
                 <strong>{f.name}</strong>
                 <span className={f.loc?.drive ? "is-driving" : f.online ? "is-online" : ""}>
@@ -232,7 +240,7 @@ function FriendDetail() {
     <>
       <Head title={friend.name} back={back} />
       <div className="friends-detail">
-        <Avatar name={friend.name} live={!!loc} />
+        <Avatar name={friend.name} live={!!loc} pid={friend.pid} />
         <div className="friends-row-text">
           <strong className={loc?.drive ? "is-driving" : friend.online ? "is-online" : ""}>{statusLine(friend)}</strong>
           <span>{away != null ? `À ${formatDistance(away)} de toi` : loc ? "Position partagée" : "Ne partage pas sa position"}</span>

@@ -9,7 +9,7 @@ function MascotSheet() {
 }
 import { MascotSettings } from "./MascotSettings";
 import { MascotEditor } from "./Editor";
-import { randomLook, updateLook } from "./look";
+import { catchUpLook, randomLook, updateLook } from "./look";
 import { usePrefs, vehiclePreset, type VehicleKind } from "../../core/prefs";
 import { initMascot } from "./engine";
 import { syncBoard } from "./leaderboard";
@@ -31,6 +31,7 @@ export const mascot: Feature = {
   ],
   init: () => {
     const stop = initMascot();
+    catchUpLook();
     // classement : resynchronise après chaque trajet (si activé)
     const off = on("drive:stop", () => { window.setTimeout(() => void syncBoard(), 1500); });
     // accès de test headless : window.osamaps.mascot.look({ hat: "beret" }) / .random() / .vehicle("heavy")

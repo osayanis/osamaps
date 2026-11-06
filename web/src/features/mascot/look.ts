@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../../core/services";
-import { deviceId, friendCode, loadLocal, saveLocal } from "../../core/identity";
+import { deviceId, loadLocal, saveLocal } from "../../core/identity";
 import { levelOf } from "./data";
 import { useMascot } from "./engine";
 
@@ -110,16 +110,29 @@ export function useShownLook(): Look {
 }
 
 let syncTimer = 0;
+/** Envoie l'apparence au serveur pour que les amis la voient (regroupé). Le serveur la range par appareil
+ *  et la retrouve via le code ami / pid qu'il a attribués (module friends) : on n'envoie pas de code. */
+function sendLook(delay: number) {
+  window.clearTimeout(syncTimer);
+  syncTimer = window.setTimeout(() => {
+    const look = useLook.getState();
+    void api("mascot/look", { method: "POST", body: JSON.stringify({ id: deviceId(), look }) })
+      .then(() => saveLocal("mascot.lookSent", look))
+      .catch(() => {});
+  }, delay);
+}
+
+/** Au lancement : renvoie l'apparence si le dernier envoi n'a pas abouti. */
+export function catchUpLook() {
+  if (JSON.stringify(loadLocal("mascot.lookSent", null)) !== JSON.stringify(useLook.getState())) sendLook(4000);
+}
+
 export function updateLook(p: Partial<Look>) {
   const next = { ...useLook.getState(), ...p };
   next.name = next.name.slice(0, MAX_NAME);
   useLook.setState(next, true);
   saveLocal("mascot.look", next);
-  // pour que les amis la voient (code ami + apparence ; regroupé)
-  window.clearTimeout(syncTimer);
-  syncTimer = window.setTimeout(() => {
-    void api("mascot/look", { method: "POST", body: JSON.stringify({ id: deviceId(), code: friendCode(), look: useLook.getState() }) }).catch(() => {});
-  }, 1500);
+  sendLook(1500);
 }
 
 const any = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
