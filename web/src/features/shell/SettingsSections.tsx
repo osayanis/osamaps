@@ -7,6 +7,7 @@ import { sunTimes } from "./sun";
 import { usePwa, canInstall, installApp, wipeLocalData } from "./pwa";
 import { haptic } from "./haptics";
 import { Switch } from "./Onboarding";
+import { VehicleRow } from "./Vehicle";
 import {
   IconAuto, IconSun, IconMoon, IconDownload, IconRefresh, IconTrash, IconHeart, IconExternal,
 } from "./icons";
@@ -92,6 +93,15 @@ export function GeneralSettings() {
           <IconDownload size={20} />
         </Row>
       )}
+    </Section>
+  );
+}
+
+/** Section « Véhicule » (juste sous « Général ») : voiture, camion, poids lourd, super lourd + dimensions. */
+export function VehicleSettings() {
+  return (
+    <Section title="Véhicule" place="top">
+      <VehicleRow />
     </Section>
   );
 }

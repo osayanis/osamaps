@@ -1,6 +1,8 @@
 import type { LngLat, Maneuver, Route } from "../../core/store";
 import { api, EXTERNAL } from "../../core/services";
 import { cumulativeDistances, decodePolyline, distance } from "../../core/geometry";
+import type { Vehicle } from "../../core/prefs";
+import { topSpeed, truckLimit } from "./truck";
 
 /**
  * Calcul d'itinéraire avec Valhalla. On passe d'abord par le proxy du serveur OsaMaps
@@ -23,6 +25,8 @@ export interface RouteOptions {
   heading?: number | null;
   /** Départ (type 1) ou arrivée souhaitée (type 2), heure locale « 2026-11-05T08:00 ». */
   dateTime?: { type: 1 | 2; value: string } | null;
+  /** Véhicule : costing Valhalla « truck » + dimensions pour les camions. */
+  vehicle?: Vehicle;
 }
 
 /** Une proposition calculée : la Route du store + ce dont le module a besoin en plus. */
@@ -66,10 +70,16 @@ interface ValhallaTrip {
 interface ValhallaResponse { trip: ValhallaTrip; alternates?: { trip: ValhallaTrip }[] }
 
 function buildRequest(points: Waypoint[], o: RouteOptions) {
-  const auto: Record<string, number> = {};
-  if (o.avoidTolls) auto.use_tolls = 0;
-  if (o.avoidHighways) auto.use_highways = 0;
-  if (o.avoidFerries) auto.use_ferry = 0;
+  const opts: Record<string, number | boolean> = {};
+  if (o.avoidTolls) opts.use_tolls = 0;
+  if (o.avoidHighways) opts.use_highways = 0;
+  if (o.avoidFerries) opts.use_ferry = 0;
+  const v = o.vehicle;
+  const truck = !!v && v.kind !== "car";
+  if (truck) {
+    Object.assign(opts, { height: v.height, width: v.width, length: v.length, weight: v.weight, axle_load: v.axleLoad, top_speed: topSpeed(v) });
+    if (v.hazmat) opts.hazmat = true;
+  }
   const multi = points.length > 2;
   return {
     locations: points.map((p, i) => {
@@ -77,8 +87,8 @@ function buildRequest(points: Waypoint[], o: RouteOptions) {
       if (i === 0 && o.heading != null && Number.isFinite(o.heading)) { loc.heading = Math.round((o.heading + 360) % 360); loc.heading_tolerance = 45; }
       return loc;
     }),
-    costing: "auto",
-    costing_options: { auto },
+    costing: truck ? "truck" : "auto",
+    costing_options: { [truck ? "truck" : "auto"]: opts },
     language: "fr-FR",
     directions_options: { units: "kilometers" },
     // Valhalla ne sait pas proposer d'alternatives avec des étapes ou une heure imposée
@@ -261,14 +271,14 @@ export function encodePolyline(coords: LngLat[], precision = 6): string {
   return out;
 }
 
-interface TraceEdges { edges: { b: number; e: number; kmh: number | null }[] }
+interface TraceEdges { edges: { b: number; e: number; kmh: number | null; rc?: string; hgv?: number }[] }
 
 /**
  * Limites de vitesse le long du tracé via /trace_attributes (edge_walk). Valhalla limite la
  * longueur d'une trace : on découpe en morceaux d'environ 90 km, envoyés l'un après l'autre.
  * Renvoie des plages compactes [{ from, kmh }] triées par index.
  */
-export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal): Promise<{ from: number; kmh: number | null }[]> {
+export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal, vehicle?: Vehicle): Promise<{ from: number; kmh: number | null }[]> {
   const cum = cumulativeDistances(coords);
   const CHUNK_M = 90_000, CHUNK_PTS = 6000, MAX_CHUNKS = 12;
   const chunks: [number, number][] = [];
@@ -290,17 +300,22 @@ export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal): 
       encoded_polyline: poly,
       shape_match: "edge_walk",
       costing: "auto",
-      filters: { attributes: ["edge.speed_limit", "edge.begin_shape_index", "edge.end_shape_index"], action: "include" },
+      filters: { attributes: ["edge.speed_limit", "edge.truck_speed", "edge.road_class", "edge.begin_shape_index", "edge.end_shape_index"], action: "include" },
     };
     let res: TraceEdges;
     try {
-      const raw = await post<TraceEdges | { edges: { speed_limit?: number; begin_shape_index: number; end_shape_index: number }[] }>(
+      const raw = await post<TraceEdges | { edges: { speed_limit?: number; truck_speed?: number; road_class?: string; begin_shape_index: number; end_shape_index: number }[] }>(
         "trace", { encoded_polyline: poly }, "trace_attributes", direct, signal);
       // le proxy renvoie la forme compacte, Valhalla direct la forme complète
       res = {
         edges: (raw.edges ?? []).map((e) => ("b" in e
           ? e
-          : { b: e.begin_shape_index, e: e.end_shape_index, kmh: e.speed_limit && e.speed_limit > 0 && e.speed_limit < 200 ? e.speed_limit : null })),
+          : {
+            b: e.begin_shape_index, e: e.end_shape_index,
+            kmh: e.speed_limit && e.speed_limit > 0 && e.speed_limit < 200 ? e.speed_limit : null,
+            rc: e.road_class,
+            hgv: e.truck_speed && e.truck_speed > 0 && e.truck_speed < 200 ? e.truck_speed : undefined,
+          })),
       };
     } catch (e) {
       if (signal?.aborted) break;
@@ -311,9 +326,11 @@ export async function fetchSpeedLimits(coords: LngLat[], signal?: AbortSignal): 
     }
     for (const e of res.edges) {
       const from = a + e.b;
-      if (ranges.length && ranges[ranges.length - 1].kmh === e.kmh) continue;
-      if (ranges.length && ranges[ranges.length - 1].from === from) ranges[ranges.length - 1].kmh = e.kmh;
-      else ranges.push({ from, kmh: e.kmh });
+      // camion : limite poids lourds (R413-8 / R413-9, voir truck.ts)
+      const kmh = vehicle ? truckLimit(e.kmh, e.hgv, e.rc, vehicle) : e.kmh;
+      if (ranges.length && ranges[ranges.length - 1].kmh === kmh) continue;
+      if (ranges.length && ranges[ranges.length - 1].from === from) ranges[ranges.length - 1].kmh = kmh;
+      else ranges.push({ from, kmh });
     }
   }
   // tout a échoué (hors ligne) : on n'invente pas de « limites inconnues », on laisse réessayer

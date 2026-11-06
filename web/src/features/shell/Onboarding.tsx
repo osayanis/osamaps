@@ -7,14 +7,15 @@ import {
   IconChevronLeft, IconChevronRight, IconArrowRight, IconCheck, IconWarn,
 } from "./icons";
 import { haptic } from "./haptics";
+import { KindGrid, Dimensions, ConvoyNote } from "./Vehicle";
 
 /**
  * Accueil au premier lancement (slot "overlay", tant que usePrefs.onboarded = false).
- * Quatre écrans courts : merci → ce que fait OsaMaps → autorisations (expliquées avant d'être
- * demandées) → pseudo, puis la carte. Glisser à gauche/droite, Entrée, ou les boutons.
- * « Revoir l'accueil » (réglages) remet onboarded à false.
+ * Écrans courts : merci → ce que fait OsaMaps → « Tu conduis quoi ? » (→ dimensions pour les camions)
+ * → autorisations (expliquées avant d'être demandées) → pseudo, puis la carte.
+ * Glisser à gauche/droite, Entrée, ou les boutons. « Revoir l'accueil » (réglages) remet onboarded à false.
  */
-const COUNT = 4;
+type Page = "welcome" | "features" | "vehicle" | "dimensions" | "permissions" | "nickname";
 
 export function Onboarding() {
   const onboarded = usePrefs((s) => s.onboarded);
@@ -25,11 +26,17 @@ export function Onboarding() {
 
 function OnboardingFlow() {
   const setPref = usePrefs((s) => s.setPref);
+  const vehicle = usePrefs((s) => s.vehicle);
+  const pages: Page[] = vehicle.kind !== "car"
+    ? ["welcome", "features", "vehicle", "dimensions", "permissions", "nickname"]
+    : ["welcome", "features", "vehicle", "permissions", "nickname"];
+  const COUNT = pages.length;
   const [step, setStep] = useState(() => {
     // pour les captures de test : ?onboarding=2
     const n = Number(new URLSearchParams(location.search).get("onboarding"));
-    return Number.isFinite(n) && n >= 0 && n < COUNT ? n : 0;
+    return Number.isFinite(n) && n >= 0 && n < 6 ? n : 0;
   });
+  const page = pages[Math.min(step, COUNT - 1)];
   const [dir, setDir] = useState<1 | -1>(1);
   const [name, setName] = useState(() => nickname());
   const [leaving, setLeaving] = useState(false);
@@ -46,6 +53,8 @@ function OnboardingFlow() {
     haptic("success");
     setLeaving(true);
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // passer l'accueil vaut choix (voiture par défaut) : la question ne revient pas en feuille
+    if (!usePrefs.getState().vehicleChosen) setPref("vehicleChosen", true);
     window.setTimeout(() => setPref("onboarded", true), reduce ? 0 : 260);
   };
   const next = () => (step === COUNT - 1 ? finish() : go(step + 1));
@@ -92,10 +101,12 @@ function OnboardingFlow() {
       </header>
 
       <main className={`shell-ob-page ${dir > 0 ? "fwd" : "back"}`} key={step}>
-        {step === 0 && <Welcome />}
-        {step === 1 && <Features />}
-        {step === 2 && <Permissions />}
-        {step === 3 && <Nickname name={name} setName={setName} onSubmit={finish} />}
+        {page === "welcome" && <Welcome />}
+        {page === "features" && <Features />}
+        {page === "vehicle" && <VehicleStep />}
+        {page === "dimensions" && <DimensionsStep />}
+        {page === "permissions" && <Permissions />}
+        {page === "nickname" && <Nickname name={name} setName={setName} onSubmit={finish} />}
       </main>
 
       <footer className="shell-ob-bottom">
@@ -160,6 +171,36 @@ function Features() {
             <div><b>{title}</b><p>{text}</p></div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function VehicleStep() {
+  const vehicle = usePrefs((s) => s.vehicle);
+  const setPref = usePrefs((s) => s.setPref);
+  return (
+    <div className="shell-ob-stack">
+      <Words text={"Tu conduis quoi\u00a0?"} />
+      <p className="shell-ob-lead st" style={{ "--i": 3 } as React.CSSProperties}>Itinéraires, limitations de vitesse et alertes s’adaptent à ton véhicule.</p>
+      <div className="st" style={{ "--i": 4 } as React.CSSProperties}>
+        <KindGrid vehicle={vehicle} onChange={(v) => { setPref("vehicle", v); setPref("vehicleChosen", true); }} />
+      </div>
+      <p className="shell-ob-note st" style={{ "--i": 6 } as React.CSSProperties}>Tout se change plus tard dans les réglages.</p>
+    </div>
+  );
+}
+
+function DimensionsStep() {
+  const vehicle = usePrefs((s) => s.vehicle);
+  const setPref = usePrefs((s) => s.setPref);
+  return (
+    <div className="shell-ob-stack">
+      <Words text={`Ton ${vehicle.kind === "truck" ? "camion" : vehicle.kind === "heavy" ? "poids lourd" : "super lourd"}, en chiffres.`} />
+      <p className="shell-ob-lead st" style={{ "--i": 3 } as React.CSSProperties}>Pré-rempli avec les valeurs habituelles : ajuste-les pour éviter ponts bas et routes limitées en tonnage.</p>
+      <div className="st" style={{ "--i": 4 } as React.CSSProperties}>
+        <Dimensions vehicle={vehicle} onChange={(v) => setPref("vehicle", v)} />
+        {vehicle.kind === "superheavy" && <ConvoyNote />}
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ function options(extra: { alternates?: number; heading?: number | null; dateTime
     alternates: extra.alternates ?? (routing().alternates ? 2 : 0),
     heading: extra.heading ?? null,
     dateTime: extra.dateTime ?? null,
+    vehicle: p.vehicle,
   };
 }
 
@@ -54,7 +55,7 @@ export function ensureSpeedLimits(route: Route | undefined) {
   if (!route || route.speedLimits || speedJobs.has(route.id)) return;
   const ctrl = new AbortController();
   speedJobs.set(route.id, ctrl);
-  fetchSpeedLimits(route.coords, ctrl.signal)
+  fetchSpeedLimits(route.coords, ctrl.signal, prefs().vehicle)
     .then((speedLimits) => {
       if (ctrl.signal.aborted) return;
       const routes = core().routes;
@@ -281,7 +282,7 @@ export function initRouting() {
   // options d'évitement changées pendant l'aperçu → nouveau calcul (petit délai : plusieurs clics)
   let t: number | undefined;
   const offPrefs = usePrefs.subscribe((s, prev) => {
-    if (s.avoidTolls === prev.avoidTolls && s.avoidHighways === prev.avoidHighways && s.avoidFerries === prev.avoidFerries) return;
+    if (s.avoidTolls === prev.avoidTolls && s.avoidHighways === prev.avoidHighways && s.avoidFerries === prev.avoidFerries && s.vehicle === prev.vehicle) return;
     if (core().mode !== "preview") return;
     window.clearTimeout(t);
     t = window.setTimeout(computePreview, 250);

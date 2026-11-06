@@ -170,3 +170,18 @@
 @media (prefers-reduced-motion: reduce) {
   .routing-sheet, .routing-panel { animation: none; }
 }
+
+/* Poids lourds : interdictions de circuler, convoi exceptionnel */
+.routing-truck { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.routing-truck-note {
+  margin: 0; padding: 10px 12px 10px 38px; border-radius: 14px; position: relative;
+  background: color-mix(in srgb, var(--danger, #ffcc00) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger, #ffcc00) 35%, transparent);
+  font-size: 13px; line-height: 1.4; color: var(--text);
+}
+.routing-truck-note::before {
+  content: ""; position: absolute; left: 13px; top: 12px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--danger, #ffcc00);
+}
+.routing-truck-note b { display: block; font-size: 14px; margin-bottom: 2px; }
+.routing-truck-note span { color: var(--dim); }
