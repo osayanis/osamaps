@@ -28,17 +28,18 @@ final class MusicSpotify: MusicProvider {
     @ObservationIgnored var onChange: (() -> Void)?
 
     /// Client ID de l'app créée par l'utilisateur sur developer.spotify.com (pas un secret).
+    /// Tel que saisi ; `id` est la version nettoyée (espaces d'un copier-coller retirés).
     var clientId: String {
         didSet {
-            let clean = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
-            if clean != clientId { clientId = clean; return }
-            guard clean != oldValue else { return }
-            Store.save("music.spotifyClientId", clean)
+            guard Self.clean(clientId) != Self.clean(oldValue) else { return }
+            Store.save("music.spotifyClientId", Self.clean(clientId))
             // un autre Client ID = une autre app Spotify : les anciens jetons ne valent plus rien
             if tokens != nil { disconnect() }
             onChange?()
         }
     }
+    private var id: String { Self.clean(clientId) }
+    private static func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var tokens: Tokens? {
         didSet {
             if let tokens, let data = try? JSONEncoder().encode(tokens) { MusicKeychain.save("spotify-tokens", data) }
@@ -65,7 +66,8 @@ final class MusicSpotify: MusicProvider {
 
     /// Format d'un Client ID Spotify : 32 caractères hexadécimaux.
     static func validClientId(_ s: String) -> Bool {
-        s.count == 32 && s.allSatisfy(\.isHexDigit)
+        let c = clean(s)
+        return c.count == 32 && c.allSatisfy(\.isHexDigit)
     }
 
     var status: MusicStatus {
@@ -93,7 +95,7 @@ final class MusicSpotify: MusicProvider {
         var c = URLComponents(string: "https://accounts.spotify.com/authorize")!
         c.queryItems = [
             .init(name: "response_type", value: "code"),
-            .init(name: "client_id", value: clientId),
+            .init(name: "client_id", value: id),
             .init(name: "scope", value: Self.scopes),
             .init(name: "redirect_uri", value: Self.redirectURI),
             .init(name: "code_challenge_method", value: "S256"),
@@ -140,7 +142,7 @@ final class MusicSpotify: MusicProvider {
         }
         do {
             tokens = try await tokenRequest(["grant_type": "authorization_code", "code": code,
-                                             "redirect_uri": Self.redirectURI, "client_id": clientId,
+                                             "redirect_uri": Self.redirectURI, "client_id": id,
                                              "code_verifier": verifier], previousRefresh: nil)
             Haptic.play("success")
             await loadAccount()
@@ -187,7 +189,7 @@ final class MusicSpotify: MusicProvider {
         guard let t = tokens else { throw MusicError.notConnected }
         if !force && t.expires > .now { return t.access }
         if refreshing == nil {
-            let clientId = clientId
+            let clientId = id
             refreshing = Task { [weak self] in
                 guard let self else { return nil }
                 do {

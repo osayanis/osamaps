@@ -63,8 +63,9 @@ final class MusicTestProvider: MusicProvider {
     func startDebugExtras(center: MusicCenter) {
         if UserDefaults.standard.string(forKey: "musicTestNotice") == "premium" {
             Task {
-                // après le démarrage de la conduite des captures (go, puis drive)
-                try? await Task.sleep(for: .seconds(9))
+                // dès que la conduite des captures a démarré (go, puis drive), sinon au bout de 20 s
+                for _ in 0..<40 where Core.shared.mode != .drive { try? await Task.sleep(for: .milliseconds(500)) }
+                try? await Task.sleep(for: .seconds(2))
                 center.show("Piloter Spotify depuis OsaMaps demande un compte Premium. Tu peux le faire dans Spotify.",
                             short: "Premium requis pour piloter Spotify", open: .spotify)
             }
