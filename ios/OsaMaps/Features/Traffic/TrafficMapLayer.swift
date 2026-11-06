@@ -272,8 +272,11 @@ final class TrafficMapController {
         v.canShowCallout = false
         v.collisionMode = .circle
         // l'important (fermetures, accidents, gravité forte) n'est jamais regroupé ni masqué en premier
-        v.displayPriority = MKFeatureDisplayPriority(rawValue: min(1000, 700 + Float(a.props.severity) * 60 - Float(kind.rank) * 10))
-        v.clusteringIdentifier = a.props.severity >= 3 && kind.rank <= 2 ? nil : "traffic-events"
+        // Les pastilles « prix » d'autres modules sont en .required : sous 990 on serait masqué presque partout.
+        // L'important (fermeture / accident / bouchon graves) est toujours affiché et jamais regroupé.
+        let major = a.props.severity >= 3 && kind.rank <= 2
+        v.displayPriority = major ? .required : MKFeatureDisplayPriority(rawValue: 960 + Float(a.props.severity) * 7 - Float(kind.rank))
+        v.clusteringIdentifier = major ? nil : "traffic-events"
         v.isAccessibilityElement = true
         v.accessibilityLabel = [a.props.title, a.props.road].compactMap { $0 }.joined(separator: ", ")
         v.accessibilityTraits = .button
@@ -290,7 +293,7 @@ final class TrafficMapController {
         v.image = TrafficEventImage.cluster(top.eventKind, count: members.count)
         v.canShowCallout = false
         v.collisionMode = .circle
-        v.displayPriority = .defaultHigh
+        v.displayPriority = .required
         v.isAccessibilityElement = true
         v.accessibilityLabel = "\(members.count) évènements, dont \(top.title)"
         v.accessibilityTraits = .button
