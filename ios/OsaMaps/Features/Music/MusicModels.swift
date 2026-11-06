@@ -69,6 +69,8 @@ enum MusicStatus: Equatable {
 struct MusicNotice: Equatable, Identifiable {
     var id = UUID()
     var text: String
+    /// Version courte pour le mini-lecteur de conduite (lisible d'un coup d'œil).
+    var short: String?
     var openSource: MusicSource?
 }
 

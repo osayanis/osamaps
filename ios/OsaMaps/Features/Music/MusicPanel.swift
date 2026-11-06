@@ -19,10 +19,20 @@ struct MusicPanelCard<Content: View>: View {
     @State private var contentHeight: CGFloat = 320
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) { content }
-                .padding(18)
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) { content }
+                    .padding(18)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+            }
+            #if DEBUG
+            .task {
+                // -musicTestScroll YES : défile jusqu'aux réglages (captures du Simulateur)
+                guard UserDefaults.standard.bool(forKey: "musicTestScroll") else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                proxy.scrollTo("music-settings", anchor: .bottom)
+            }
+            #endif
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
@@ -97,6 +107,7 @@ struct MusicPanel: View {
                 .osaCard()
         }
         .padding(.top, 4)
+        .id("music-settings")
     }
 
     private func emptyNow(_ s: MusicSource) -> some View {

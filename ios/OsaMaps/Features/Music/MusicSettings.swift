@@ -22,7 +22,7 @@ struct MusicSettingsContent: View {
     var inPanel: Bool
     @Bindable private var center = MusicCenter.shared
     @Bindable private var spotify = MusicCenter.shared.spotify
-    @State private var showHelp = false
+    @State private var showHelp = UserDefaults.standard.bool(forKey: "musicTestHelp")
     @State private var copied = false
     @FocusState private var editing: Bool
 
@@ -155,39 +155,41 @@ struct MusicSettingsContent: View {
         switch spotify.status {
         case .minimal: "Sans Client ID, OsaMaps ouvre seulement Spotify. Avec, il affiche le morceau, tes playlists et pilote la lecture."
         case .needsAuth: "Client ID enregistré : connecte ton compte."
-        case .ready: "Morceau en cours et playlists ; les commandes demandent Premium."
+        case .ready: "Morceau en cours, playlists et commandes de lecture."
         case .unavailable(let why): why
         }
     }
 
     private var help: some View {
         VStack(alignment: .leading, spacing: 12) {
-            step(1, "Sur developer.spotify.com, ouvre le Dashboard et connecte-toi avec ton compte Spotify (accepte les conditions la première fois).")
+            step(1, "Sur developer.spotify.com, ouvre le Dashboard et connecte-toi avec ton compte Spotify Premium (accepte les conditions la première fois).")
             MusicGhostButton("Ouvrir le Dashboard Spotify", symbol: "arrow.up.forward") {
                 if let u = URL(string: "https://developer.spotify.com/dashboard") { UIApplication.shared.open(u) }
             }
             .padding(.leading, 34)
             step(2, "« Create app » : nom « OsaMaps », une description au choix (ex. « GPS perso »).")
             step(3, "Redirect URIs : colle exactement cette adresse, puis « Add » :")
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(MusicSpotify.redirectURI)
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Osa.text)
                     .textSelection(.enabled)
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                Spacer(minLength: 0)
-                MusicGhostButton(copied ? "Copié" : "Copier", symbol: copied ? "checkmark" : "doc.on.doc") {
+                    .fixedSize(horizontal: false, vertical: true)
+                MusicGhostButton(copied ? "Copié" : "Copier l'adresse", symbol: copied ? "checkmark" : "doc.on.doc") {
                     UIPasteboard.general.string = MusicSpotify.redirectURI
                     Haptic.play("success")
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(2)); copied = false }
                 }
             }
-            .padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 4)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Osa.surface, in: RoundedRectangle(cornerRadius: Osa.radiusS, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Osa.radiusS, style: .continuous).strokeBorder(Osa.line))
             .padding(.leading, 34)
             step(4, "« Which API/SDKs are you planning to use? » : coche « Web API », accepte les conditions, puis « Save ».")
             step(5, "Ouvre l'app créée › « Settings » : copie le « Client ID », colle-le dans le champ ci-dessus, puis « Se connecter à Spotify ».")
-            Text("Bon à savoir : Spotify demande que le propriétaire d'une app en mode développement ait un abonnement Premium. Sans Premium, OsaMaps reste en mode simple et ouvre Spotify. Le Client ID n'est pas un secret, aucun mot de passe n'est enregistré.")
+            Text("Bon à savoir : depuis 2026, Spotify n'active une app en mode développement que si son propriétaire a un abonnement Premium (5 comptes au plus). Sans Premium, OsaMaps reste en mode simple et ouvre Spotify. Le Client ID n'est pas un secret, et aucun mot de passe n'est enregistré dans OsaMaps.")
                 .font(.osa(12.5, .medium)).foregroundStyle(Osa.faint)
                 .fixedSize(horizontal: false, vertical: true)
         }

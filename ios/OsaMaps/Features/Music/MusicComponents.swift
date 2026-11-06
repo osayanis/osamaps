@@ -127,19 +127,23 @@ struct MusicNoticeRow: View {
     var compact = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: "info.circle.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(Osa.dim)
-            Text(notice.text)
-                .font(.osa(compact ? 13 : 14, .medium)).foregroundStyle(Osa.text)
+            Text(compact ? notice.short ?? notice.text : notice.text)
+                .font(.osa(compact ? 14 : 14, compact ? .semibold : .medium)).foregroundStyle(Osa.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let s = notice.openSource {
-                Button("Ouvrir \(s.label)") { MusicCenter.shared.open(s) }
-                    .font(.osa(13, .bold)).foregroundStyle(.black)
-                    .padding(.horizontal, 12).frame(minHeight: 36)
-                    .background(Color.white, in: Capsule())
-                    .buttonStyle(MusicPress())
-                    .fixedSize()
+                Button { MusicCenter.shared.open(s) } label: {
+                    // libellé court : le texte du message garde la place
+                    Label("Ouvrir", systemImage: "arrow.up.forward")
+                        .font(.osa(13, .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 12).frame(minHeight: 40)
+                        .background(Color.white, in: Capsule())
+                }
+                .buttonStyle(MusicPress())
+                .fixedSize()
+                .accessibilityLabel("Ouvrir \(s.label)")
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)

@@ -5,13 +5,16 @@ import Observation
 
 /// Spotify par la Web API, sans SDK : connexion OAuth « PKCE » (pas de secret dans l'app) dans une
 /// `ASWebAuthenticationSession`, jetons dans le trousseau, rafraîchis tout seuls.
-/// - Morceau en cours : fonctionne avec un compte gratuit.
-/// - Commandes (lecture, pause, suivant…) : Spotify les réserve à Premium (403 → message clair + « Ouvrir Spotify »).
+/// - Depuis 2026, une app Spotify « en développement » ne fonctionne que si son propriétaire a Premium (5 comptes max).
+/// - Commandes (lecture, pause, suivant…) : réservées à Premium ; un 403 donne un message clair + « Ouvrir Spotify »
+///   (GET /me ne dit plus si le compte est Premium : on ne le sait qu'à la première commande).
 /// - Sans Client ID : mode simple, on ouvre seulement l'app Spotify.
 @MainActor
 @Observable
 final class MusicSpotify: MusicProvider {
-    static let redirectURI = "osamaps://spotify-callback"
+    /// Spotify n'accepte que des Redirect URI en HTTPS : le serveur OsaMaps (server/features/music.js) relaie
+    /// aussitôt vers osamaps://spotify-callback, que la session de connexion récupère (schéma « osamaps »).
+    static let redirectURI = "https://osalabs.fr/maps/api/music/spotify-callback"
     private static let scopes = "user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative"
 
     let source = MusicSource.spotify
@@ -73,7 +76,7 @@ final class MusicSpotify: MusicProvider {
     func start() {
         startPolling()
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { Task { await self?.refresh() } }
+            MainActor.assumeIsolated { _ = Task { await self?.refresh() } }
         }
         if status == .ready { Task { await loadAccount(); await refresh() } }
     }

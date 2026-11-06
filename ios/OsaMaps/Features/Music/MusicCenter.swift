@@ -44,6 +44,8 @@ final class MusicCenter {
             test = MusicTestProvider(source: src)
             preferred = src
         }
+        // -musicSource spotify : source choisie au lancement (captures)
+        if let s = UserDefaults.standard.string(forKey: "musicSource").flatMap(MusicSource.init(rawValue:)) { preferred = s }
         #endif
     }
 
@@ -70,6 +72,10 @@ final class MusicCenter {
             case "previous": self?.previous()
             default: break
             }
+        }
+        // au retour au premier plan : les notifications du lecteur système ont pu être manquées
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { _ = Task { await self?.refreshAll() } }
         }
         changed()
         #if DEBUG
@@ -150,8 +156,8 @@ final class MusicCenter {
 
     // MARK: - Messages
 
-    func show(_ text: String, open: MusicSource? = nil) {
-        notice = MusicNotice(text: text, openSource: open)
+    func show(_ text: String, short: String? = nil, open: MusicSource? = nil) {
+        notice = MusicNotice(text: text, short: short, openSource: open)
         noticeTask?.cancel()
         noticeTask = Task {
             try? await Task.sleep(for: .seconds(7))
@@ -163,16 +169,19 @@ final class MusicCenter {
         Haptic.play("warning")
         switch error as? MusicError {
         case .premiumRequired:
-            show("Piloter Spotify depuis OsaMaps demande un compte Premium. Tu peux le faire dans Spotify.", open: .spotify)
+            show("Piloter Spotify depuis OsaMaps demande un compte Premium. Tu peux le faire dans Spotify.",
+                 short: "Premium requis pour piloter Spotify", open: .spotify)
         case .noActiveDevice:
-            show("Spotify ne joue sur aucun appareil. Ouvre Spotify et lance un morceau.", open: .spotify)
+            show("Spotify ne joue sur aucun appareil. Ouvre Spotify et lance un morceau.",
+                 short: "Spotify ne joue nulle part", open: .spotify)
         case .notConnected:
             show(source == .apple ? "Autorise l'accès à ta musique dans le panneau Musique."
-                                  : "Connecte Spotify dans les réglages Musique pour piloter la lecture.", open: source)
+                                  : "Connecte Spotify dans les réglages Musique pour piloter la lecture.",
+                 short: source == .apple ? "Accès à la musique à autoriser" : "Spotify n'est pas connecté", open: source)
         case .message(let m):
             show(m, open: source)
         case nil:
-            show("Pas de réseau : la commande n'est pas passée.", open: source)
+            show("Pas de réseau : la commande n'est pas passée.", short: "Pas de réseau", open: source)
         }
     }
 }
