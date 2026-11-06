@@ -79,54 +79,118 @@ export function projectOnRoute(ix: SegIndex, p: LngLat, maxDist: number): { offs
 
 // ------------------------------------------------------------------ zones de danger
 
+function headingOf(a: LngLat, b: LngLat) {
+  const [x, y] = local(a)(b);
+  return (Math.atan2(x, y) * 180) / Math.PI;
+}
+
+/** Projection avec le segment touché (pour comparer les caps). */
+function projectSeg(ix: SegIndex, p: LngLat, maxDist: number): { along: number; seg: number } | null {
+  let best: { d: number; along: number; seg: number } | null = null;
+  for (const i of segmentsNear(ix, p, maxDist)) {
+    const { d, t } = segDist(p, ix.coords[i - 1], ix.coords[i]);
+    if (d <= maxDist && (!best || d < best.d)) best = { d, along: ix.cum[i - 1] + t * (ix.cum[i] - ix.cum[i - 1]), seg: i };
+  }
+  return best;
+}
+
 /**
- * Découpe les disques de zone le long du tracé. Le serveur garantit que l'appareil est à moins de
- * r/2 du centre : si le tracé ne passe pas à moins de r/2 du centre, l'appareil n'est pas sur notre
- * route → pas de zone. Sinon la zone = la corde du disque sur le tracé, allongée symétriquement
- * jusqu'à la longueur réglementaire (2r) si besoin.
+ * Portions de l'itinéraire qui suivent une ligne de tronçon : on parcourt la ligne tous les 15 m,
+ * chaque point doit être à moins de 22 m du tracé ET dans le même sens (écart de cap < 50° ; les
+ * deux sens pour une route à double sens). Une route qui ne fait que croiser le tronçon ne compte pas.
+ */
+export function lineOverlap(ix: SegIndex, line: LngLat[], oneway: boolean): { start: number; end: number }[] {
+  if (line.length < 2) return [];
+  let lineLen = 0;
+  for (let i = 1; i < line.length; i++) lineLen += Math.hypot(...local(line[i - 1])(line[i]));
+  const out: { start: number; end: number }[] = [];
+  let run: { lo: number; hi: number } | null = null;
+  let misses = 0;
+  const close = () => {
+    if (run && run.hi - run.lo >= Math.min(60, 0.5 * lineLen)) out.push({ start: run.lo, end: run.hi });
+    run = null;
+  };
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1], b = line[i];
+    const len = Math.hypot(...local(a)(b));
+    const h = headingOf(a, b);
+    const n = Math.max(1, Math.ceil(len / 15));
+    for (let k = 0; k <= (i === line.length - 1 ? n : n - 1); k++) {
+      const t = k / n;
+      const p: LngLat = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      const hit = projectSeg(ix, p, 22);
+      if (hit) {
+        const diff = Math.abs(angleDiff(headingOf(ix.coords[hit.seg - 1], ix.coords[hit.seg]), h));
+        if (diff < 50 || (!oneway && diff > 130)) {
+          run = run ? { lo: Math.min(run.lo, hit.along), hi: Math.max(run.hi, hit.along) } : { lo: hit.along, hi: hit.along };
+          misses = 0;
+          continue;
+        }
+      }
+      if (++misses > 3) close(); // un trou de plus de ~45 m coupe la portion
+    }
+  }
+  close();
+  return out;
+}
+
+/**
+ * Zones de danger sur l'itinéraire, en distance le long du tracé :
+ *  - tronçon : la portion de l'itinéraire qui le parcourt (dans le sens de circulation si connu) ;
+ *  - disque de repli : la corde du disque sur le tracé si le tracé passe à moins de r/2 du centre
+ *    (le serveur garantit que l'appareil y est), allongée jusqu'à la longueur réglementaire (2r).
  */
 export function dangerIntervals(ix: SegIndex, zones: DangerZone[]): DangerInterval[] {
   const total = ix.cum[ix.cum.length - 1] ?? 0;
   const raw: DangerInterval[] = [];
   for (const z of zones) {
-    const c: LngLat = [z.lng, z.lat];
-    const L = local(c);
-    const parts: { start: number; end: number; minD: number }[] = [];
-    for (const i of segmentsNear(ix, c, z.r)) {
-      const a = ix.coords[i - 1], b = ix.coords[i];
-      const [ax, ay] = L(a), [bx, by] = L(b);
-      const dx = bx - ax, dy = by - ay;
-      const qa = dx * dx + dy * dy;
-      if (!qa) continue;
-      const qb = 2 * (dx * ax + dy * ay);
-      const qc = ax * ax + ay * ay - z.r * z.r;
-      const disc = qb * qb - 4 * qa * qc;
-      if (disc < 0) continue;
-      const s = Math.sqrt(disc);
-      const t0 = Math.max(0, (-qb - s) / (2 * qa)), t1 = Math.min(1, (-qb + s) / (2 * qa));
-      if (t0 >= t1) continue;
-      const len = ix.cum[i] - ix.cum[i - 1];
-      const minD = segDist(c, a, b).d;
-      const start = ix.cum[i - 1] + t0 * len, end = ix.cum[i - 1] + t1 * len;
-      const last = parts[parts.length - 1];
-      if (last && start - last.end < 50) { last.end = Math.max(last.end, end); last.minD = Math.min(last.minD, minD); }
-      else parts.push({ start, end, minD });
-    }
-    for (const p of parts) {
-      if (p.minD > z.r / 2) continue;
-      let { start, end } = p;
-      const need = 2 * z.r - (end - start);
-      if (need > 0) { start -= need / 2; end += need / 2; }
-      raw.push({ id: z.id, start: Math.max(0, start), end: Math.min(total, end), kind: z.kind });
+    if (z.r != null) { raw.push(...diskIntervals(ix, z, z.r, total)); continue; }
+    for (const line of z.lines) {
+      for (const p of lineOverlap(ix, line, z.oneway)) raw.push({ id: z.id, start: Math.max(0, p.start), end: Math.min(total, p.end), kind: z.kind });
     }
   }
-  // fusion des zones qui se chevauchent (deux appareils proches = une seule zone)
+  // fusion des zones qui se chevauchent (deux appareils proches, deux chaussées = une seule zone)
   raw.sort((a, b) => a.start - b.start);
   const out: DangerInterval[] = [];
   for (const z of raw) {
     const last = out[out.length - 1];
     if (last && z.start <= last.end + 30) last.end = Math.max(last.end, z.end);
     else out.push({ ...z });
+  }
+  return out;
+}
+
+function diskIntervals(ix: SegIndex, z: DangerZone, r: number, total: number): DangerInterval[] {
+  const c = z.mid;
+  const L = local(c);
+  const parts: { start: number; end: number; minD: number }[] = [];
+  for (const i of segmentsNear(ix, c, r)) {
+    const a = ix.coords[i - 1], b = ix.coords[i];
+    const [ax, ay] = L(a), [bx, by] = L(b);
+    const dx = bx - ax, dy = by - ay;
+    const qa = dx * dx + dy * dy;
+    if (!qa) continue;
+    const qb = 2 * (dx * ax + dy * ay);
+    const qc = ax * ax + ay * ay - r * r;
+    const disc = qb * qb - 4 * qa * qc;
+    if (disc < 0) continue;
+    const s = Math.sqrt(disc);
+    const t0 = Math.max(0, (-qb - s) / (2 * qa)), t1 = Math.min(1, (-qb + s) / (2 * qa));
+    if (t0 >= t1) continue;
+    const len = ix.cum[i] - ix.cum[i - 1];
+    const minD = segDist(c, a, b).d;
+    const start = ix.cum[i - 1] + t0 * len, end = ix.cum[i - 1] + t1 * len;
+    const last = parts[parts.length - 1];
+    if (last && start - last.end < 50) { last.end = Math.max(last.end, end); last.minD = Math.min(last.minD, minD); }
+    else parts.push({ start, end, minD });
+  }
+  const out: DangerInterval[] = [];
+  for (const p of parts) {
+    if (p.minD > r / 2) continue;
+    let { start, end } = p;
+    const need = 2 * r - (end - start);
+    if (need > 0) { start -= need / 2; end += need / 2; }
+    out.push({ id: z.id, start: Math.max(0, start), end: Math.min(total, end), kind: z.kind });
   }
   return out;
 }

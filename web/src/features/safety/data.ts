@@ -1,21 +1,46 @@
 import { api } from "../../core/services";
+import { decodePolyline, distance } from "../../core/geometry";
 import type { LngLat } from "../../core/store";
 
-/** Un disque de zone de danger tel qu'envoyé par le serveur (jamais la position de l'appareil). */
-export interface DangerZone {
-  id: string;
-  lng: number;
-  lat: number;
-  /** Rayon (m) = longueur réglementaire de la zone / 2. */
-  r: number;
-  kind: "city" | "road" | "motorway";
+export type ZoneKind = "city" | "road" | "motorway";
+
+/** Une zone de danger telle qu'envoyée par le serveur (format compact, tuiles zoom 8). */
+interface ZoneDTO {
+  /** Identifiant opaque (pas le numéro du radar). */
+  i: string;
+  k: ZoneKind;
+  /** Milieu du tronçon [lng, lat] (l'icône), ou centre du disque de repli. */
+  m: LngLat;
+  /** Tronçon : une polyline encodée (précision 5) par chaussée. */
+  p?: string[];
+  /** 1 : polylines dans le sens de circulation, 0 : double sens. */
+  o?: 0 | 1;
+  /** Repli (aucune route trouvée ou pas encore calculé) : disque de rayon r (m). */
+  r?: number;
 }
 
-export interface ZonesResponse {
+/**
+ * Une zone de danger : un TRONÇON de route (une ligne par chaussée) ou, en repli, un disque.
+ * L'appareil est quelque part entre 15 et 85 % du tronçon : le serveur ne dit jamais où.
+ */
+export interface DangerZone {
+  id: string;
+  kind: ZoneKind;
+  mid: LngLat;
+  lines: LngLat[][];
+  oneway: boolean;
+  /** Disque de repli (m), absent pour un tronçon. */
+  r?: number;
+  /** Longueur (m) du tronçon, ou diamètre du disque. */
+  length: number;
+}
+
+interface SegmentsResponse {
   available: boolean;
   error: string | null;
-  source: { name: string; page: string; updated: string | null };
-  zones: DangerZone[];
+  complete?: boolean;
+  zoom: number;
+  tiles: Record<string, ZoneDTO[]>;
 }
 
 export interface ZfeProps {
@@ -45,31 +70,80 @@ export interface PoiTile { lc: LngLat[]; sc: LngLat[] }
 
 // ------------------------------------------------------------------ appels serveur (avec cache)
 
-/** Toutes les zones de France (≈ 3 300, la liste change ~1×/an) : une seule requête par session. */
-let allZones: Promise<ZonesResponse> | null = null;
-export function fetchAllZones(): Promise<ZonesResponse> {
-  if (!allZones) {
-    allZones = api<ZonesResponse>("safety/zones/all").then(
-      (r) => { if (!r.available) allZones = null; return r; },
-      (e) => { allZones = null; throw e; },
-    );
-  }
-  return allZones;
+export const ZONE_ZOOM = 8;
+
+function lineLength(l: LngLat[]) {
+  let d = 0;
+  for (let i = 1; i < l.length; i++) d += distance(l[i - 1], l[i]);
+  return d;
 }
 
-const zoneCache = new Map<string, Promise<ZonesResponse>>();
-export function fetchZones(bbox: [number, number, number, number]): Promise<ZonesResponse> {
-  const key = bbox.map((v) => v.toFixed(2)).join(",");
-  let p = zoneCache.get(key);
-  if (!p) {
-    p = api<ZonesResponse>(`safety/zones?bbox=${key}`).then(
-      (r) => { if (!r.available) zoneCache.delete(key); return r; },
-      (e) => { zoneCache.delete(key); throw e; },
-    );
-    zoneCache.set(key, p);
-    if (zoneCache.size > 40) zoneCache.delete(zoneCache.keys().next().value!);
+function decodeZone(d: ZoneDTO): DangerZone {
+  const lines = (d.p ?? []).map((s) => decodePolyline(s, 5)).filter((l) => l.length >= 2);
+  const r = lines.length ? undefined : d.r ?? 150;
+  return { id: d.i, kind: d.k, mid: d.m, lines, oneway: d.o === 1, r, length: lines.length ? lineLength(lines[0]) : 2 * (r ?? 150) };
+}
+
+interface CachedTile { at: number; complete: boolean; zones: DangerZone[] }
+const zoneTiles = new Map<string, CachedTile>();
+const tileTasks = new Map<string, Promise<void>>();
+/** Dernier état connu des données serveur. */
+export const zonesStatus: { available: boolean | null; error: string | null } = { available: null, error: null };
+
+async function fetchTiles(keys: string[]) {
+  try {
+    const r = await api<SegmentsResponse>(`safety/segments?tiles=${keys.join(",")}`);
+    zonesStatus.available = r.available;
+    zonesStatus.error = r.available ? null : r.error ?? "indisponible";
+    if (!r.available) return;
+    for (const k of keys) zoneTiles.set(k, { at: Date.now(), complete: r.complete ?? true, zones: (r.tiles[k] ?? []).map(decodeZone) });
+  } catch (e) {
+    if (zonesStatus.available == null) zonesStatus.error = String((e as Error).message || e);
+  } finally {
+    for (const k of keys) tileTasks.delete(k);
   }
-  return p;
+}
+
+/** Zones déjà connues d'une tuile (sans réseau). */
+export function cachedZoneTile(key: string): DangerZone[] | undefined {
+  return zoneTiles.get(key)?.zones;
+}
+
+/**
+ * Zones des tuiles demandées : cache, puis serveur pour les tuiles manquantes ou périmées (une
+ * journée ; 10 min tant que le serveur calcule encore les tronçons). Hors ligne : la dernière version.
+ */
+export async function fetchZoneTiles(keys: string[]): Promise<Map<string, DangerZone[]>> {
+  const now = Date.now();
+  const stale = keys.filter((k) => {
+    const t = zoneTiles.get(k);
+    return !t || now - t.at > (t.complete ? 86_400_000 : 600_000);
+  });
+  const waits = stale.filter((k) => tileTasks.has(k)).map((k) => tileTasks.get(k)!);
+  const todo = stale.filter((k) => !tileTasks.has(k));
+  for (let i = 0; i < todo.length; i += 32) {
+    const chunk = todo.slice(i, i + 32);
+    const p = fetchTiles(chunk);
+    chunk.forEach((k) => tileTasks.set(k, p));
+    waits.push(p);
+  }
+  await Promise.all(waits);
+  const out = new Map<string, DangerZone[]>();
+  for (const k of keys) { const z = zoneTiles.get(k); if (z) out.set(k, z.zones); }
+  return out;
+}
+
+/** Tuiles (zoom 8) couvrant un rectangle, au plus `limit`. */
+export function zoneTilesIn(w: number, s: number, e: number, n: number, limit = 64): string[] {
+  const k = 2 ** ZONE_ZOOM;
+  const tx = (lng: number) => Math.max(0, Math.min(k - 1, Math.floor(((lng + 180) / 360) * k)));
+  const ty = (lat: number) => {
+    const r = (Math.max(-85, Math.min(85, lat)) * Math.PI) / 180;
+    return Math.max(0, Math.min(k - 1, Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * k)));
+  };
+  const out: string[] = [];
+  for (let x = tx(w); x <= tx(e); x++) for (let y = ty(n); y <= ty(s); y++) { out.push(`${ZONE_ZOOM}/${x}/${y}`); if (out.length >= limit) return out; }
+  return out;
 }
 
 let zfePromise: Promise<ZfeResponse> | null = null;

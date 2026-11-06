@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { core, useCore, type LngLat, type Route } from "../../core/store";
 import { emit, on } from "../../core/bus";
-import { cumulativeDistances, formatDistance } from "../../core/geometry";
-import { fetchPoiTiles, fetchZfe, fetchZones, tileKey } from "./data";
+import { along, cumulativeDistances, formatDistance } from "../../core/geometry";
+import { fetchPoiTiles, fetchZfe, fetchZoneTiles, tileKey, zonesStatus, zoneTilesIn, type DangerZone } from "./data";
 import {
   buildSegIndex, dangerIntervals, findCurves, poisAlong, snapWindow, zfeCrossings,
   type Curve, type DangerInterval, type RoutePoi, type SegIndex, type ZfeCrossing,
@@ -47,17 +47,18 @@ function alert(id: string, kind: string, text: string, distance: number, tone: "
 
 // ------------------------------------------------------------------ analyse de l'itinéraire
 
-function routeBBox(coords: LngLat[], pad = 0.03): [number, number, number, number] {
-  let w = 180, s = 90, e = -180, n = -90;
-  for (const [x, y] of coords) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
-  return [w - pad, s - pad, e + pad, n + pad];
-}
-
-/** Découpe une grande boîte en morceaux acceptés par le serveur (≤ 14°). */
-function splitBBox([w, s, e, n]: [number, number, number, number]) {
-  const out: [number, number, number, number][] = [];
-  for (let x = w; x < e; x += 12) for (let y = s; y < n; y += 12) out.push([x, y, Math.min(e, x + 12), Math.min(n, y + 12)]);
-  return out;
+/** Tuiles de zones (zoom 8) traversées par le tracé, avec ~3 km de marge (un tronçon dont le milieu
+ *  est dans la tuile voisine peut déborder jusqu'à 2 km). */
+function routeZoneTiles(coords: LngLat[], cum: number[]): string[] {
+  const keys = new Set<string>();
+  const total = cum[cum.length - 1] ?? 0;
+  for (let d = 0; ; d += 1500) {
+    const [lng, lat] = along(coords, cum, Math.min(d, total));
+    const dLat = 0.03, dLng = 0.03 / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+    zoneTilesIn(lng - dLng, lat - dLat, lng + dLng, lat + dLat).forEach((k) => keys.add(k));
+    if (d >= total) break;
+  }
+  return [...keys];
 }
 
 async function analyze(route: Route | undefined) {
@@ -74,18 +75,17 @@ async function analyze(route: Route | undefined) {
   const myIx = ix;
 
   // données serveur (avec nouvelles tentatives si le serveur vient de démarrer ou est injoignable)
-  const loadZones = (attempt: number) =>
-    Promise.all(splitBBox(routeBBox(route.coords)).map(fetchZones))
-      .then((rs) => {
-        if (ix !== myIx) return;
-        const err = rs.find((r) => !r.available)?.error ?? null;
-        useSafety.setState({ dangers: dangerIntervals(myIx, rs.flatMap((r) => r.zones)), zonesError: err });
-        if (err && attempt < 5) window.setTimeout(() => ix === myIx && loadZones(attempt + 1), 30000);
-      })
-      .catch((e) => {
-        useSafety.setState({ zonesError: String(e.message || e) });
-        if (attempt < 5) window.setTimeout(() => ix === myIx && loadZones(attempt + 1), 30000);
-      });
+  const loadZones = (attempt: number) => {
+    const keys = routeZoneTiles(route.coords, cum);
+    return fetchZoneTiles(keys).then((got) => {
+      if (ix !== myIx) return;
+      const byId = new Map<string, DangerZone>();
+      for (const list of got.values()) for (const z of list) byId.set(z.id, z);
+      const missing = got.size < keys.length;
+      useSafety.setState({ dangers: dangerIntervals(myIx, [...byId.values()]), zonesError: missing ? zonesStatus.error ?? "zones de danger indisponibles" : null });
+      if (missing && attempt < 5) window.setTimeout(() => ix === myIx && loadZones(attempt + 1), 30000);
+    });
+  };
   const loadZfe = (attempt: number) =>
     fetchZfe()
       .then((r) => {
