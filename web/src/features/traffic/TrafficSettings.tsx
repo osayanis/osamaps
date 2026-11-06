@@ -51,7 +51,7 @@ export function TrafficSettings() {
       </details>
 
       <p className="traffic-credit">
-        Sources : contributions OsaMaps et Bison Futé / Directions interdépartementales des routes (mesures et évènements, Licence Ouverte).
+        Sources : contributions OsaMaps ; Bison Futé / DIR ; DiaLog ; open data des villes et départements (Paris, Lyon, Rennes, Bordeaux, Toulouse, Lille, Tours, Angers, Loire-Atlantique, Côtes-d'Armor, Mayenne, Sarthe) ; Météo-France via MeteoAlarm ; prix-carburants ; ONISR (accidents des 3 dernières années) ; Autobahn GmbH, NDW, DGT, Servei Català de Trànsit, CITA. Chaque fiche cite ses sources ; sans source, rien ne s'affiche.
         Tant qu'il y a peu d'utilisateurs, la carte reste souvent vide hors grands axes : c'est normal, rien n'est inventé.
       </p>
     </section>

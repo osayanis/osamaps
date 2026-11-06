@@ -72,6 +72,7 @@ final class TrafficDriveController {
 
     private func clear() {
         TrafficStore.shared.routeRuns = nil
+        TrafficStore.shared.routeEvents = nil
         TrafficStore.shared.ahead = nil
     }
 
@@ -118,6 +119,7 @@ final class TrafficDriveController {
     func query() {
         let c = Core.shared
         guard let route = c.route, route.coords.count >= 2, c.mode == .drive || c.mode == .preview, !inflight else { return }
+        queryEvents(route)
         inflight = true
         lastQuery = Date()
         let cu = cum(route)
@@ -145,11 +147,84 @@ final class TrafficDriveController {
         }
     }
 
+    private var eventsInflight = false
+
+    /// Évènements multi-sources sur l'itinéraire (accidents, fermetures, travaux, vigilances…).
+    private func queryEvents(_ route: Route) {
+        guard !eventsInflight else { return }
+        eventsInflight = true
+        let c = Core.shared
+        let cu = cum(route)
+        let from = c.mode == .drive ? max(0, (c.progress?.shapeIndex ?? 0) - 1) : 0
+        let (coords, offset) = slice(route, cu, from: from)
+        Task { @MainActor [weak self] in
+            defer { self?.eventsInflight = false }
+            do {
+                let res = try await API.post("events/route", body: AlongBody(coords: coords), as: TrafficEventsRouteResult.self, timeout: 25)
+                guard let self, Core.shared.route?.id == route.id else { return }
+                let list = res.events.map { h in
+                    TrafficRouteEvent(id: h.id, kind: h.eventKind, severity: h.severity, title: h.title, road: h.road, lanes: h.lanes,
+                                      blocking: h.blocking ?? false, confidence: h.confidence ?? 0.5,
+                                      from: offset + h.at, to: offset + h.at + h.length, delay: h.routeDelay)
+                }
+                TrafficStore.shared.routeEvents = (route.id, list, Date())
+                #if DEBUG
+                NSLog("OsaMaps traffic: %d évènements sur l'itinéraire, retard %.0f s", list.count, res.totalDelay)
+                #endif
+                self.update()
+            } catch {
+                if let r = TrafficStore.shared.routeEvents, Date().timeIntervalSince(r.at) > 300 { TrafficStore.shared.routeEvents = nil }
+            }
+        }
+    }
+
+    /// Portée (m) de la première annonce et de la seconde (« tout près ») par type ; nil = pas d'annonce.
+    private static func alertRange(_ e: TrafficRouteEvent) -> (far: Double, near: Double)? {
+        guard e.confidence >= 0.5 else { return nil }
+        switch e.kind {
+        case .closure: return e.blocking ? (30_000, 2_000) : (5_000, 800)
+        case .accident: return (10_000, 1_000)
+        case .danger: return (3_000, 500)
+        case .jam: return e.delay >= 60 ? (10_000, 1_000) : nil   // déjà mesuré → annoncé par les portions ralenties
+        case .lanes: return e.severity >= 2 ? (5_000, 800) : nil
+        case .works: return e.severity >= 2 ? (2_000, 500) : nil
+        case .weather, .flood: return e.severity >= 3 ? (20_000, 0) : nil
+        // points noirs : annoncés en conduite plutôt qu'affichés en permanence sur la carte
+        case .hotspot: return e.severity >= 3 ? (800, 0) : e.severity >= 2 ? (350, 0) : nil
+        case .fuel: return nil
+        }
+    }
+
+    private static func alertText(_ e: TrafficRouteEvent, _ dist: Double) -> String {
+        let whereTxt = dist < 150 ? "ici" : "dans \(Geo.formatDistance(dist))"
+        let road = e.road.map { " sur \($0)" } ?? ""
+        switch e.kind {
+        case .closure: return e.blocking ? "Route fermée\(road) \(whereTxt), prévoyez un détour" : "\(e.title) \(whereTxt)"
+        case .accident: return "Accident\(road) \(whereTxt)" + (e.delay >= 90 ? ", ~\(Int((e.delay / 60).rounded())) min de retard" : "")
+        case .weather, .flood: return "\(e.title) sur votre trajet"
+        case .hotspot: return "Section accidentogène \(whereTxt), prudence"
+        case .lanes: return "\(e.lanes ?? e.title) \(whereTxt)"
+        default: return "\(e.title) \(whereTxt)"
+        }
+    }
+
+    private static func alertTone(_ e: TrafficRouteEvent) -> DriveAlert.Tone {
+        switch e.kind {
+        case .closure, .accident, .danger: .danger
+        case .weather, .flood: e.severity >= 4 ? .danger : .warn
+        default: .warn
+        }
+    }
+
     /// Recalcule « devant moi » à chaque position (sans réinterroger le serveur).
     func update() {
         let c = Core.shared
         let store = TrafficStore.shared
-        guard let route = c.route, let info = store.routeRuns, info.routeId == route.id else { store.ahead = nil; return }
+        guard let route = c.route else { store.ahead = nil; return }
+        let evs = store.routeEvents?.routeId == route.id ? store.routeEvents!.events : []
+        guard let info = store.routeRuns.flatMap({ $0.routeId == route.id ? $0 : nil }) ?? (evs.isEmpty ? nil : (routeId: route.id, runs: [TrafficRouteRun](), at: Date())) else {
+            store.ahead = nil; return
+        }
         let cu = cum(route)
         var here = 0.0
         if c.mode == .drive, let p = c.position {
@@ -166,10 +241,13 @@ final class TrafficDriveController {
                 nextDistance = max(0, r.from - here)
             }
         }
+        // retards des évènements devant (déjà à 0 côté serveur quand le trafic mesuré les compte)
+        for e in evs where e.to >= here { delay += e.delay }
         let ahead = TrafficAhead(delay: delay.rounded(), next: next, nextDistance: nextDistance)
         if store.ahead != ahead { store.ahead = ahead }
         emit(.trafficDelay(routeId: route.id, delay: delay.rounded(), nextJamDistance: nextDistance))
 
+        if c.mode == .drive { alertEvents(evs, here: here) }
         guard c.mode == .drive, let next, let dist = nextDistance, dist <= Self.alertRange else { return }
         let key = String(format: "traffic-%.3f-%.3f", next.start.longitude, next.start.latitude)
         let words = next.level == .jam ? "Bouchon" : "Ralentissement"
@@ -188,6 +266,31 @@ final class TrafficDriveController {
         } else if dist <= Self.near, !alerted.contains("\(key)-near") {
             alerted.insert("\(key)-near")
             say("\(key)-near")
+        }
+    }
+
+    /// Annonce une fois chaque évènement devant (puis une seconde fois tout près pour les plus graves).
+    private func alertEvents(_ evs: [TrafficRouteEvent], here: Double) {
+        for e in evs where e.to >= here - 20 {
+            guard let range = Self.alertRange(e) else { continue }
+            let dist = max(0, e.from - here)
+            guard dist <= range.far else { continue }
+            let key = "events-\(e.id)"
+            let say = { (id: String) in
+                emit(.driveAlert(DriveAlert(id: id, kind: "traffic-\(e.kind.rawValue)", text: Self.alertText(e, dist),
+                                            distance: dist.rounded(), tone: Self.alertTone(e))))
+                #if DEBUG
+                NSLog("OsaMaps traffic: alerte « %@ »", Self.alertText(e, dist))
+                #endif
+            }
+            if !alerted.contains(key) {
+                alerted.insert(key)
+                say(key)
+                if dist <= range.near { alerted.insert("\(key)-near") }
+            } else if range.near > 0, dist <= range.near, !alerted.contains("\(key)-near") {
+                alerted.insert("\(key)-near")
+                say("\(key)-near")
+            }
         }
     }
 }

@@ -55,7 +55,8 @@ enum TrafficDebug {
     private static func handle(_ url: URL) {
         let q = Dictionary((URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") },
                            uniquingKeysWith: { _, b in b })
-        if q["drive"] == "1", let from = coord(q["from"]), let to = coord(q["to"]) {
+        // from=here : départ de la position actuelle (le simulateur reprend là où il s'était arrêté)
+        if q["drive"] == "1", let from = q["from"] == "here" ? Core.shared.position?.coordinate : coord(q["from"]), let to = coord(q["to"]) {
             Task { await drive(from: from, to: to) }
             return
         }
