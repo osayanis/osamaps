@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { usePrefs } from "../../core/prefs";
+import { usePrefs, vehiclePreset } from "../../core/prefs";
 import { core, useCore } from "../../core/store";
 import { loadLocal, saveLocal } from "../../core/identity";
 import { DEFAULT_CENTER } from "../../core/geo";
@@ -123,6 +123,9 @@ export function AboutSettings() {
   const wipe = () => {
     if (!confirm) { haptic("warn"); setConfirm(true); return; }
     haptic("error");
+    // le profil véhicule repart aussi de zéro (l'accueil le redemandera)
+    setPref("vehicle", vehiclePreset("car"));
+    setPref("vehicleChosen", false);
     void wipeLocalData();
   };
 

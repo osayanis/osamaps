@@ -1,4 +1,5 @@
 import { useCore } from "../../core/store";
+import { usePrefs } from "../../core/prefs";
 import { formatDistance, formatDuration } from "../../core/geometry";
 import { useGuide, type GuideAlert } from "./state";
 import { thenManeuverIndex, finishArrival } from "./engine";
@@ -127,6 +128,7 @@ function SpeedWidget() {
   const kmh = useGuide((s) => s.speedKmh);
   const limit = useGuide((s) => s.limitKmh);
   const speeding = useGuide((s) => s.speeding);
+  const truck = usePrefs((s) => s.vehicle.kind !== "car");
   return (
     <div className="guidance-speed" aria-label="Vitesse">
       <div className={`guidance-speedo${speeding ? " is-over" : ""}`}>
@@ -134,7 +136,10 @@ function SpeedWidget() {
         <span>km/h</span>
       </div>
       {limit != null && (
-        <div className={`guidance-limit${limit >= 100 ? " is-wide" : ""}`} aria-label={`Limitation ${limit} km/h`}><b>{limit}</b></div>
+        <div className="guidance-limit-wrap" aria-label={truck ? `Limitation poids lourds ${limit} km/h` : `Limitation ${limit} km/h`}>
+          <div className={`guidance-limit${limit >= 100 ? " is-wide" : ""}`}><b>{limit}</b></div>
+          {truck && <span className="guidance-limit-pl" aria-hidden="true">PL</span>}
+        </div>
       )}
     </div>
   );

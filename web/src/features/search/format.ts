@@ -3,7 +3,7 @@ import type { LngLat } from "../../core/store";
 
 const KIND_ICON: Record<string, string> = {
   address: "address", street: "street", city: "city", poi: "poi", fuel: "fuel", charge: "charge",
-  parking: "parking", food: "food", cafe: "cafe", bakery: "bakery", pharmacy: "pharmacy", shop: "shop",
+  parking: "parking", truckstop: "truckstop", food: "food", cafe: "cafe", bakery: "bakery", pharmacy: "pharmacy", shop: "shop",
   toilets: "toilets", health: "health", train: "train", bus: "bus", park: "park", home: "home",
   work: "work", car: "car", favorite: "star", recent: "clock", coords: "locate", map: "pin",
 };

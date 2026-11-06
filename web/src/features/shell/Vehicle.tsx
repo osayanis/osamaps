@@ -233,7 +233,9 @@ export function VehicleBadge() {
   const v = usePrefs((s) => s.vehicle);
   const onboarded = usePrefs((s) => s.onboarded);
   const mode = useCore((s) => s.mode);
-  if (v.kind === "car" || !onboarded) return null;
+  const panel = useCore((s) => s.panel);
+  // masqué quand une fiche est ouverte : la colonne remonte et passerait sur les puces de recherche
+  if (v.kind === "car" || !onboarded || panel !== null) return null;
   return (
     <button className="round shell-rail-btn shell-rail-top shell-veh-badge" disabled={mode === "drive"}
       aria-label={`Mode ${VEHICLE_LABELS[v.kind].label.toLowerCase()}, ${num(v.weight)} tonnes`} title="Modifier le véhicule"

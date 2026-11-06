@@ -1,15 +1,18 @@
+import { usePrefs, VEHICLE_LABELS } from "../../core/prefs";
 import { ENERGY_LABEL, FUELS, useAlongPrefs, type Energy } from "./prefs";
 
 /** Section « Sur le trajet » de l'écran Réglages. */
 export function AlongSettings() {
   const p = useAlongPrefs();
+  const kind = usePrefs((s) => s.vehicle.kind);
+  const [lo, hi] = p.range();
   const ev = p.energy === "ev";
   const energies: Energy[] = [...FUELS, "ev"];
-  const step = ev ? 1 : 0.5;
+  const step = ev || kind !== "car" ? 1 : 0.5;
   const value = ev ? p.evConsumption : p.consumption;
   const setValue = (v: number) => ev
     ? p.setAlong("evConsumption", Math.min(40, Math.max(8, Math.round(v))))
-    : p.setAlong("consumption", Math.min(25, Math.max(2, Math.round(v * 2) / 2)));
+    : p.setAlong("consumption", Math.min(hi, Math.max(lo, kind === "car" ? Math.round(v * 2) / 2 : Math.round(v))));
   return (
     <section className="along-settings card" aria-labelledby="along-settings-title">
       <h3 id="along-settings-title">Sur le trajet</h3>
@@ -26,7 +29,7 @@ export function AlongSettings() {
       <div className="along-set-row">
         <span className="along-set-text">
           <span>Consommation</span>
-          <small>Pour estimer le coût du trajet.</small>
+          <small>{kind === "car" || ev ? "Pour estimer le coût du trajet." : `${VEHICLE_LABELS[kind].label} : pour estimer le coût du trajet.`}</small>
         </span>
         <div className="along-stepper">
           <button onClick={() => setValue(value - step)} aria-label="Moins">−</button>

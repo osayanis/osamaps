@@ -1,4 +1,4 @@
-import { EXTERNAL } from "../../core/services";
+import { EXTERNAL, api } from "../../core/services";
 import { distance } from "../../core/geometry";
 import type { LngLat } from "../../core/store";
 import type { Category } from "./categories";
@@ -332,7 +332,34 @@ export async function searchPlaces(q: string, near: LngLat | null, signal: Abort
  * POI d'une catégorie autour d'un point (Photon, filtre `include=osm.<clé>.<valeur>`, sans texte).
  * Le cache est indexé sur une grille d'≈ 1 km : se déplacer un peu ne relance pas de requête.
  */
+interface TruckStop { id: string; name: string | null; lat: number; lng: number; kind: string; capacity: number | null; fuel?: boolean }
+const TRUCK_KIND: Record<string, string> = {
+  services: "Aire de services", rest_area: "Aire de repos poids lourds", fuel: "Station poids lourds", parking: "Parking poids lourds",
+};
+
+/** Aires PL du serveur OsaMaps (OpenStreetMap via Overpass, en cache). */
+async function truckStops(center: LngLat, km: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  const q = `lat=${center[1].toFixed(3)}&lng=${center[0].toFixed(3)}&km=${km}`;
+  const d = await api<{ items: TruckStop[] }>(`truck/stops?${q}`, { signal });
+  return d.items.slice(0, 20).map((i) => {
+    const label = TRUCK_KIND[i.kind] ?? "Parking poids lourds";
+    const parts = [i.name ? label : null, i.capacity ? `${i.capacity} places PL` : null].filter(Boolean);
+    return {
+      id: i.id, name: i.name ?? label, detail: parts.join(" · ") || "OpenStreetMap", coord: [i.lng, i.lat] as LngLat,
+      kind: "truckstop", typeLabel: label, source: "local" as const, rel: 1,
+    };
+  });
+}
+
 export async function searchNearby(cat: Category, center: LngLat, signal?: AbortSignal): Promise<SearchResult[]> {
+  if (cat.truckOnly) {
+    try {
+      const list = await truckStops(center, cat.maxKm, signal);
+      if (list.length) return list;
+    } catch (e) {
+      if ((e as Error).name === "AbortError") throw e;
+    }
+  }
   const params = {
     include: cat.include.join(","),
     lat: (Math.round(center[1] * 100) / 100).toFixed(2),

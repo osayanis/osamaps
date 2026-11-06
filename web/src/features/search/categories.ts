@@ -8,7 +8,15 @@ export interface Category {
   include: string[];
   /** Rayon max affiché (km). */
   maxKm: number;
+  /** Seulement en mode camion (aires poids lourds, servies par le serveur OsaMaps). */
+  truckOnly?: boolean;
 }
+
+/** Aires et parkings poids lourds (GET truck/stops, OpenStreetMap ; repli Photon sur les aires). */
+export const TRUCK_STOPS: Category = {
+  id: "truckstop", label: "Aires PL", single: "Aire poids lourds", icon: "truckstop",
+  include: ["osm.highway.services", "osm.highway.rest_area"], maxKm: 40, truckOnly: true,
+};
 
 export const CATEGORIES: Category[] = [
   { id: "fuel", label: "Essence", single: "Station-service", icon: "fuel", include: ["osm.amenity.fuel"], maxKm: 25 },
@@ -23,4 +31,7 @@ export const CATEGORIES: Category[] = [
   { id: "health", label: "Hôpital", single: "Hôpital", icon: "health", include: ["osm.amenity.hospital"], maxKm: 60 },
 ];
 
-export const categoryById = (id: string) => CATEGORIES.find((c) => c.id === id);
+export const categoryById = (id: string) => (id === TRUCK_STOPS.id ? TRUCK_STOPS : CATEGORIES.find((c) => c.id === id));
+
+/** Puces affichées : les aires PL en tête quand le mode camion est actif. */
+export const visibleCategories = (truck: boolean): Category[] => (truck ? [TRUCK_STOPS, ...CATEGORIES] : CATEGORIES);
