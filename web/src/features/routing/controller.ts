@@ -98,7 +98,8 @@ export async function computePreview() {
     { coord: destination.coord, name: destination.name },
   ];
   try {
-    const list = await computeRoutes(points, options({ dateTime: depart }), ctrl.signal);
+    // le plus rapide en premier (et sélectionné) : Valhalla classe par coût, qui en camion n'est pas la durée
+    const list = (await computeRoutes(points, options({ dateTime: depart }), ctrl.signal)).sort((x, y) => x.route.duration - y.route.duration);
     if (ctrl.signal.aborted || core().mode !== "preview") return;
     storeMeta(list);
     core().set({ routes: list.map((c) => c.route), activeRoute: 0 });

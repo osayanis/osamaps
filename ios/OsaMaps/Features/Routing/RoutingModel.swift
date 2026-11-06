@@ -200,7 +200,8 @@ final class RoutingModel {
         let opts = options(depart: depart)
         previewTask = Task { @MainActor [weak self] in
             do {
-                let list = try await RoutingEngine.compute(points, options: opts)
+                // le plus rapide en premier (et sélectionné) : Valhalla classe par coût, qui en camion n'est pas la durée
+                let list = try await RoutingEngine.compute(points, options: opts).sorted { $0.route.duration < $1.route.duration }
                 guard let self, !Task.isCancelled, self.core.mode == .preview else { return }
                 self.storeMeta(list)
                 self.core.routes = list.map(\.route)

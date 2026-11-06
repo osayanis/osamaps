@@ -17,6 +17,15 @@ enum AlongDebug {
         //   -alongOpen fuel|weather|station|settings   panneau ouvert ensuite
         //   -alongDrive YES           démarre ensuite la conduite
         let d = UserDefaults.standard
+        //   -alongView 45.76,4.87,0.05   carte centrée (lat, lng, largeur en degrés), sans suivi : captures en exploration
+        if let v = d.string(forKey: "alongView")?.split(separator: ",").compactMap({ Double($0) }), v.count == 3 {
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                Core.shared.follow = false
+                Core.shared.map?.setRegion(MKCoordinateRegion(center: .init(latitude: v[0], longitude: v[1]),
+                                                              span: .init(latitudeDelta: v[2], longitudeDelta: v[2])), animated: false)
+            }
+        }
         if d.bool(forKey: "alongTest") {
             Task {
                 try? await Task.sleep(for: .seconds(2))

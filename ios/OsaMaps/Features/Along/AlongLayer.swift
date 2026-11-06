@@ -12,6 +12,8 @@ final class AlongAnnotation: NSObject, MKAnnotation {
     var style: Style
     /// Petit = plus important (la moins chère d'abord).
     var rank: Double
+    /// Exploration : priorité basse (les évènements, la recherche… passent devant).
+    var low = false
 
     init(key: String, ref: AlongStationRef, coordinate: CLLocationCoordinate2D, label: String, style: Style, rank: Double) {
         self.key = key; self.ref = ref; self.coordinate = coordinate; self.label = label; self.style = style; self.rank = rank
@@ -77,7 +79,8 @@ final class AlongPillView: MKAnnotationView {
         // MapKit masque les étiquettes qui se chevauchent : les moins chères gagnent
         // le tri à l'écran est fait par AlongLayer.declutter (MapKit ne masque pas ces vues de façon fiable) ;
         // en cas de chevauchement résiduel, la moins chère passe dessus
-        displayPriority = .required
+        // en exploration, priorité plus basse que les évènements : MapKit masque la pilule si elle gêne
+        displayPriority = a.low ? MKFeatureDisplayPriority(rawValue: 300) : .required
         zPriority = MKAnnotationViewZPriority(rawValue: Float(max(1, min(999, 999 - a.rank))))
         accessibilityLabel = a.label
         isAccessibilityElement = true
@@ -96,8 +99,11 @@ enum AlongLayer {
 
     /// Garde, de la plus importante (la moins chère) à la moins importante, les étiquettes qui ne
     /// recouvrent pas une étiquette déjà gardée ; celles hors de l'écran attendent le prochain mouvement.
-    private static func declutter(_ all: [String: AlongAnnotation], in map: MKMapView) -> [String: AlongAnnotation] {
-        let area = map.bounds.insetBy(dx: -120, dy: -120)
+    private static func declutter(_ all: [String: AlongAnnotation], in map: MKMapView, limit: Int = 150, visibleOnly: Bool = false) -> [String: AlongAnnotation] {
+        // exploration épurée : zone vraiment visible, sous la recherche et au-dessus du panneau du bas
+        let b = map.bounds
+        let area = visibleOnly ? CGRect(x: 0, y: 150, width: b.width, height: max(100, b.height * 0.6 - 150))
+            : b.insetBy(dx: -120, dy: -120)
         var kept: [CGRect] = []
         var out: [String: AlongAnnotation] = [:]
         for a in all.values.sorted(by: { ($0.rank, $0.key) < ($1.rank, $1.key) }) {
@@ -109,13 +115,21 @@ enum AlongLayer {
             if kept.contains(where: { $0.intersects(r) }) { continue }
             kept.append(r)
             out[a.key] = a
-            if out.count >= 150 { break }
+            if out.count >= limit { break }
         }
         return out
     }
 
-    /// En exploration, on n'affiche les prix qu'à partir d'un zoom de quartier (~ zoom 11).
+    /// Catégorie « Essence » choisie dans la recherche : toutes les stations (zoom de quartier, ~ zoom 11).
     static func zoomedIn(_ r: MKCoordinateRegion) -> Bool { r.span.longitudeDelta <= 0.3 }
+    /// Exploration simple (carte épurée) : prix seulement de près (~ zoom 13 sur un iPhone).
+    static func zoomedClose(_ r: MKCoordinateRegion) -> Bool { r.span.longitudeDelta <= 0.07 }
+    /// Nombre de prix en exploration simple : les moins chers visibles.
+    static let browseMax = 7
+    private static var zoomClose = false
+    private static var fuelCategory: Bool {
+        Core.shared.panel == "search-results" && SearchState.shared.category?.id == "fuel"
+    }
 
     static var layer: MapLayer {
         MapLayer(id: "along", zIndex: 30, attach: { map in
@@ -124,8 +138,10 @@ enum AlongLayer {
             alongObserve({
                 _ = core.mode; _ = model.nearbyFuel; _ = model.nearbyEv; _ = model.route
                 _ = prefs.energy; _ = prefs.showStations
+                _ = core.panel; _ = SearchState.shared.category?.id
             }) { refresh() }
             zoomOK = zoomedIn(map.region)
+            zoomClose = zoomedClose(map.region)
             refresh()
             model.loadNearby(map)
         }, renderer: { overlay in
@@ -152,6 +168,7 @@ enum AlongLayer {
             return true
         }, regionDidChange: { map in
             zoomOK = zoomedIn(map.region)
+            zoomClose = zoomedClose(map.region)
             // en conduite la caméra bouge sans cesse : au plus 2 recalculs par seconde
             if Core.shared.mode != .drive || Date.now.timeIntervalSince(lastRefresh) > 0.5 { refresh() }
             if Core.shared.mode == .browse { AlongModel.shared.loadNearby(map) }
@@ -162,10 +179,13 @@ enum AlongLayer {
     static func refresh() {
         guard let map else { return }
         lastRefresh = .now
-        let want = declutter(desired(), in: map)
+        // exploration sans la catégorie « Essence » : carte épurée, seulement les quelques moins chers visibles
+        let sparse = Core.shared.mode == .browse && !fuelCategory
+        let want = sparse ? declutter(desired(), in: map, limit: browseMax, visibleOnly: true) : declutter(desired(), in: map)
+        for a in want.values { a.low = sparse }
         var remove: [AlongAnnotation] = []
         for (k, a) in shown {
-            if let w = want[k], w.label == a.label, w.style == a.style, w.ref == a.ref { continue }
+            if let w = want[k], w.label == a.label, w.style == a.style, w.ref == a.ref, w.low == a.low { continue }
             remove.append(a)
             shown[k] = nil
         }
@@ -181,7 +201,7 @@ enum AlongLayer {
         let energy = prefs.energy
         var out: [String: AlongAnnotation] = [:]
         if core.mode == .browse {
-            guard zoomOK else { return [:] }
+            guard fuelCategory ? zoomOK : zoomClose else { return [:] }
             if energy.isEV { model.nearbyEv.forEach { add(ev: $0, into: &out) } } else { addFuel(model.nearbyFuel, energy, into: &out) }
         } else {
             guard let r = model.route, r.status == .ready, r.energy == energy, r.routeId == core.route?.id else { return [:] }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MLMap, MapLayerMouseEvent } from "maplibre-gl";
 import { core, useCore } from "../../core/store";
 import { useAlong, type StationPanelData } from "./state";
@@ -7,10 +7,16 @@ import { loadNearby } from "./controller";
 import { isFresh, price3 } from "./format";
 import { cheapestIds } from "./suggest";
 import type { EvStation, FuelStation } from "./api";
+import { useSearch } from "../search/state";
 
 const SRC = "along-stations";
 const L_DOT = "along-dot";
 const L_PILL = "along-pill";
+/** Exploration simple (carte épurée « comme Waze ») : prix seulement de près, et les quelques moins chers visibles. */
+const BROWSE_MIN_ZOOM = 13;
+const BROWSE_MAX = 7;
+/** Calques d'évènements qui passent devant les prix en exploration (placés avant eux par MapLibre). */
+const ABOVE = ["traffic-events-icons", "reports-points", "reports-clusters", "reports-cluster-count"];
 const IMG = { white: "along-pill-white", green: "along-pill-green", dim: "along-pill-dim" } as const;
 
 /** Pilule étirable dessinée au canvas (icon-text-fit) : blanche, verte (la moins chère) ou sombre (prix ancien). */
@@ -102,6 +108,10 @@ export function AlongLayer() {
   const nearbyFuel = useAlong((s) => s.nearbyFuel);
   const nearbyEv = useAlong((s) => s.nearbyEv);
   const route = useAlong((s) => s.route);
+  const panel = useCore((s) => s.panel);
+  // catégorie « Essence » choisie dans la recherche : toutes les stations, comme avant
+  const fuelCat = useSearch((s) => s.category?.id === "fuel") && panel === "search-results";
+  const [viewTick, setViewTick] = useState(0);
   const index = useRef(new Map<string, StationPanelData>());
 
   // exploration : stations autour ; aperçu / conduite : stations du trajet (≤ 1 km)
@@ -124,8 +134,23 @@ export function AlongLayer() {
     return feats;
   }, [showStations, mode, route, energy, nearbyEv, nearbyFuel]);
 
-  const featuresRef = useRef(features);
-  featuresRef.current = features;
+  const sparse = mode === "browse" && !fuelCat && energy !== "ev";
+  const shown = useMemo(() => {
+    if (!sparse || !map) return features;
+    if (map.getZoom() < BROWSE_MIN_ZOOM - 0.01) return [];
+    // zone vraiment visible : sous la barre de recherche, au-dessus du panneau du bas
+    const c = map.getCanvas(), w = c.clientWidth, h = c.clientHeight;
+    const tl = map.unproject([0, 110]), br = map.unproject([w, h * 0.62]);
+    const inView = (f: Feat) => {
+      const [x, y] = f.geometry.coordinates;
+      return x >= tl.lng && x <= br.lng && y <= tl.lat && y >= br.lat;
+    };
+    return features.filter(inView).sort((a, b) => a.properties.sort - b.properties.sort).slice(0, BROWSE_MAX);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, sparse, map, viewTick]);
+
+  const featuresRef = useRef(shown);
+  featuresRef.current = shown;
 
   // mise en place (et après chaque changement de style clair/sombre)
   useEffect(() => {
@@ -136,7 +161,7 @@ export function AlongLayer() {
     };
     setup();
     map.on("style.load", setup);
-    const onMove = () => { if (core().mode === "browse") loadNearby(map); };
+    const onMove = () => { if (core().mode === "browse") { loadNearby(map); setViewTick((t) => t + 1); } };
     map.on("moveend", onMove);
     onMove();
     const click = (e: MapLayerMouseEvent) => {
@@ -164,14 +189,21 @@ export function AlongLayer() {
 
   useEffect(() => {
     if (!map) return;
-    (map.getSource(SRC) as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features });
-    // en exploration, on n'affiche les prix qu'à partir d'un zoom de quartier
+    (map.getSource(SRC) as GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: shown });
+    // en exploration : prix de près seulement (zoom de quartier avec la catégorie « Essence »)
     if (map.getLayer(L_PILL)) {
-      const min = mode === "browse" ? 11 : 0;
+      const min = mode !== "browse" ? 0 : sparse ? BROWSE_MIN_ZOOM : 11;
       map.setLayerZoomRange(L_PILL, min, 24);
       map.setLayerZoomRange(L_DOT, min, 24);
+      // exploration simple : sous les évènements (ils gagnent les collisions) ; sinon au-dessus, comme avant
+      const layers = map.getStyle().layers ?? [];
+      const firstAbove = sparse ? layers.find((l) => ABOVE.includes(l.id))?.id : undefined;
+      try {
+        map.moveLayer(L_DOT, firstAbove);
+        map.moveLayer(L_PILL, firstAbove);
+      } catch { /* style en cours de rechargement */ }
     }
-  }, [map, features, mode]);
+  }, [map, shown, mode, sparse]);
 
   useEffect(() => { if (map && mode === "browse") loadNearby(map); }, [map, mode]);
 
