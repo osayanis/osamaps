@@ -39,7 +39,8 @@ function alertRange(e: RouteEvent): [number, number] | null {
     case "lanes": return e.severity >= 2 ? [5_000, 800] : null;
     case "works": return e.severity >= 2 ? [2_000, 500] : null;
     case "weather": case "flood": return e.severity >= 3 ? [20_000, 0] : null;
-    case "hotspot": return e.severity >= 3 ? [800, 0] : null;
+    // points noirs : annoncés en conduite plutôt qu'affichés en permanence sur la carte
+    case "hotspot": return e.severity >= 3 ? [800, 0] : e.severity >= 2 ? [350, 0] : null;
     default: return null;
   }
 }

@@ -21,10 +21,13 @@ const ATTRIBUTION = "Trafic : OsaMaps, Bison Futé, DiaLog, collectivités, Mét
 
 /** Densité selon le zoom (le serveur filtre déjà ; on affine sans recharger). */
 function visibleAt(p: EventFeature["properties"], z: number) {
+  if (p.type === "weather" || p.type === "flood") return z < 12 || p.severity >= 3; // vigilance : vue d'ensemble
+  // le serveur classe chaque évènement : en vue ville, seulement ce qui compte pour un conducteur ;
+  // chantiers de rue, arrêtés locaux et points noirs seulement de près
+  if (typeof p.minZoom === "number") return z >= p.minZoom;
   switch (p.type) {
     case "hotspot": return z >= 12.5 || (z >= 11 && p.severity >= 2);
     case "fuel": return z >= 11;
-    case "weather": case "flood": return z < 12 || p.severity >= 3;
     case "works": case "lanes": return p.severity >= 2 ? z >= 9 : z >= 12;
     default: return p.severity >= 3 || z >= 9;
   }
@@ -53,7 +56,7 @@ function createController(map: MLMap) {
     if (!map.getSource(SRC_EV)) {
       // regroupement natif de MapLibre (comme Waze) ; l'évènement le plus important du groupe donne l'icône
       map.addSource(SRC_EV, {
-        type: "geojson", data: evCollection(), cluster: true, clusterRadius: 38, clusterMaxZoom: 14,
+        type: "geojson", data: evCollection(), cluster: true, clusterRadius: 46, clusterMaxZoom: 14,
         clusterProperties: { top: ["min", ["get", "rank"]] },
       });
     }
@@ -105,7 +108,8 @@ function createController(map: MLMap) {
         layout: {
           visibility: vis,
           "icon-image": ["case",
-            ...(Object.keys(RANK) as EventKind[]).flatMap((k) => [sym(k), `traffic-ev-${k}-s`]), "traffic-ev-danger-s"] as never,
+            ...(Object.keys(RANK) as EventKind[]).flatMap((k) => [sym(k), `traffic-ev-${k}`]), "traffic-ev-danger"] as never,
+          "icon-size": 0.85,
           "icon-allow-overlap": true,
           "symbol-sort-key": ["get", "top"],
         },
@@ -115,7 +119,7 @@ function createController(map: MLMap) {
         layout: {
           visibility: vis,
           "text-field": ["case", [">", ["get", "point_count"], 99], "99+", ["to-string", ["get", "point_count"]]],
-          "text-font": ["Noto Sans Bold"], "text-size": 11, "text-offset": [1.15, -1.0], "text-allow-overlap": true, "icon-allow-overlap": true,
+          "text-font": ["Noto Sans Bold"], "text-size": 9.5, "text-offset": [1.05, -0.95], "text-allow-overlap": true, "icon-allow-overlap": true,
         },
         paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 4 },
       });
@@ -129,12 +133,18 @@ function createController(map: MLMap) {
         filter: ["!", ["has", "point_count"]],
         layout: {
           visibility: vis,
-          "icon-image": ["concat", "traffic-ev-", ["get", "type"], ["case", [">=", ["get", "severity"], 3], "-s", ""]],
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 12, 0.95, 16, 1.05],
+          "icon-image": ["concat", "traffic-ev-", ["get", "type"],
+            ["case", ["all", [">=", ["get", "severity"], 3], ["!=", ["get", "type"], "hotspot"]], "-s", ""]],
+          // points noirs (accidentalité passée) : petites pastilles discrètes, annoncées surtout en conduite
+          "icon-size": ["interpolate", ["linear"], ["zoom"],
+            8, ["case", ["==", ["get", "type"], "hotspot"], 0.55, 0.8],
+            12, ["case", ["==", ["get", "type"], "hotspot"], 0.62, 0.95],
+            16, ["case", ["==", ["get", "type"], "hotspot"], 0.7, 1.05]],
           "icon-allow-overlap": ["step", ["zoom"], false, 11, true],
           "icon-padding": 2,
           "symbol-sort-key": ["get", "rank"],
         },
+        paint: { "icon-opacity": ["case", ["==", ["get", "type"], "hotspot"], 0.75, 1] },
       });
     }
   }

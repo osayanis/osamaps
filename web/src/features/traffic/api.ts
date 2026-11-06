@@ -61,6 +61,8 @@ export interface EventProps {
   merged: number;
   relatedJam: { id: string; delay: number | null; speed: number | null; distance: number } | null;
   line: LngLat[] | null;
+  /** Zoom minimal d'affichage calculé par le serveur selon l'importance (carte « comme Waze »). */
+  minZoom?: number;
 }
 
 export interface EventFeature {

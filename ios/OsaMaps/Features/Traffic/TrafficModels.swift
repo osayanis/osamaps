@@ -155,6 +155,8 @@ struct TrafficEventProps: Codable, Hashable, Sendable {
     var merged: Int?
     var relatedJam: TrafficRelatedJam?
     var line: [[Double]]?
+    /// Zoom minimal d'affichage calculé par le serveur selon l'importance (carte « comme Waze »).
+    var minZoom: Double?
 
     var eventKind: TrafficEventKind { TrafficEventKind(rawValue: type) ?? .danger }
 

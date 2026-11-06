@@ -193,7 +193,8 @@ final class TrafficMapController {
     }
 
     /// Le serveur densifie selon le zoom (`z`) : en zoomant, on recharge en franchissant ces paliers.
-    static func zoomBucket(_ z: Double) -> Int { z < 9 ? 0 : z < 10 ? 1 : z < 11 ? 2 : z < 12 ? 3 : z < 13 ? 4 : 5 }
+    /// Palier de rechargement : le serveur filtre par importance au zoom entier près (jusqu'à 15).
+    static func zoomBucket(_ z: Double) -> Int { Int(min(15, max(8, z.rounded(.down)))) }
 
     private static func contains(_ outer: [Double], _ inner: [Double]) -> Bool {
         inner[0] >= outer[0] && inner[1] >= outer[1] && inner[2] <= outer[2] && inner[3] <= outer[3]
@@ -256,7 +257,7 @@ final class TrafficMapController {
         var buckets: [String: [TrafficEvent]] = [:]
         for e in visibleEvents {
             guard let c = e.coordinate else { continue }
-            if (Self.major(e.properties) && z >= 13) || z >= 15.5 {
+            if (Self.major(e.properties) && z >= 13) || z >= 15.5 || e.properties.eventKind == .hotspot {
                 let p = e.properties
                 wanted["e:\(p.id)|\(p.severity)|\(p.title)"] = { TrafficEventAnnotation(props: p, coordinate: c) }
                 continue
@@ -333,6 +334,10 @@ final class TrafficMapController {
 
     /// Densité selon le zoom (le serveur filtre déjà, on affine en zoomant/dézoomant sans recharger).
     static func visible(_ p: TrafficEventProps, zoom z: Double) -> Bool {
+        if p.eventKind == .weather || p.eventKind == .flood { return z < 12 || p.severity >= 3 }   // vigilance : vue d'ensemble
+        // Le serveur classe chaque évènement : en vue ville, seulement ce qui compte pour un conducteur ;
+        // chantiers de rue, arrêtés locaux et points noirs seulement de près.
+        if let mz = p.minZoom { return z >= mz }
         switch p.eventKind {
         case .hotspot: return z >= 12.5 || (z >= 11 && p.severity >= 2)
         case .fuel: return z >= 11
@@ -432,6 +437,7 @@ enum TrafficEventImage {
     static func image(_ kind: TrafficEventKind, severe: Bool = false) -> UIImage {
         let key = "\(kind.rawValue)-\(severe)"
         if let i = cache[key] { return i }
+        if kind == .hotspot { return discreet(kind, key: key) }
         let size: CGFloat = severe ? 34 : 28
         let g = glyph(kind, severe ? 14 : 12)
         let img = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
@@ -452,16 +458,37 @@ enum TrafficEventImage {
         return img
     }
 
-    /// Groupe d'évènements : pastille de l'évènement le plus important + badge blanc avec le nombre.
+    /// Point noir (accidentalité passée) : petite pastille discrète, ce n'est pas un évènement en cours.
+    private static func discreet(_ kind: TrafficEventKind, key: String) -> UIImage {
+        let size: CGFloat = 20
+        let g = glyph(kind, 8)
+        let img = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
+            let r = CGRect(x: 1, y: 1, width: size - 2, height: size - 2)
+            let c = ctx.cgContext
+            c.setFillColor(UIColor(red: 14 / 255, green: 14 / 255, blue: 20 / 255, alpha: 0.7).cgColor)
+            c.fillEllipse(in: r)
+            c.setStrokeColor(kind.uiTone.withAlphaComponent(0.75).cgColor)
+            c.setLineWidth(1.5)
+            c.strokeEllipse(in: r.insetBy(dx: 0.5, dy: 0.5))
+            let gs = g.size
+            let scale = min(1, 10 / max(gs.width, gs.height))
+            let w = gs.width * scale, h = gs.height * scale
+            g.draw(in: CGRect(x: (size - w) / 2, y: (size - h) / 2, width: w, height: h))
+        }
+        cache[key] = img
+        return img
+    }
+
+    /// Groupe d'évènements : petite pastille de l'évènement le plus important + petit badge blanc avec le nombre.
     static func cluster(_ kind: TrafficEventKind, count: Int) -> UIImage {
         let label = count > 99 ? "99+" : "\(count)"
         let key = "cluster-\(kind.rawValue)-\(label)"
         if let i = cache[key] { return i }
-        let base = image(kind, severe: true)
-        let font = UIFont.systemFont(ofSize: 11, weight: .heavy)
+        let base = image(kind)
+        let font = UIFont.systemFont(ofSize: 9.5, weight: .heavy)
         let text = NSAttributedString(string: label, attributes: [.font: font, .foregroundColor: UIColor.black])
         let ts = text.size()
-        let bw = max(18, ts.width + 9), bh: CGFloat = 18
+        let bw = max(15, ts.width + 7), bh: CGFloat = 15
         let size = CGSize(width: base.size.width + bw * 0.55, height: base.size.height + 4)
         let img = UIGraphicsImageRenderer(size: size).image { ctx in
             base.draw(at: CGPoint(x: 0, y: 4))

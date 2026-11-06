@@ -835,6 +835,43 @@ const DIALOG = {
 };
 SOURCES.push(...CITY_SOURCES, DIALOG);
 
+// ───────────────────────── importance à l'écran ─────────────────────────
+// Carte « comme Waze » : en vue ville, seulement ce qui compte pour un conducteur (accidents, fermetures
+// et bouchons des grands axes, dangers, évènements graves ou confirmés par plusieurs sources).
+// Les chantiers de rue et arrêtés locaux n'apparaissent que de près ; les points noirs BAAC servent
+// surtout aux alertes de conduite (pastille discrète seulement tout près).
+const LOCAL_SOURCES = new Set([...CITY_SOURCES.map((s) => s.id), DIALOG.id]);
+/** 2 = grand axe (autoroute, nationale, métropolitaine, européenne), 1 = départementale, 0 = rue / inconnue. */
+function roadClass(road) {
+  const k = roadKey(road);
+  if (!k) return 0;
+  if (/^(A|AP|E|M|N|RN|RCEA)\d/.test(k)) return 2;
+  if (/^(D|RD|C|CV|GI|B|L)\d/.test(k)) return 1;
+  return 0;
+}
+function minZoomOf(e) {
+  const rc = roadClass(e.road);
+  const local = LOCAL_SOURCES.has(e.source);
+  const main = rc === 2 || (!local && rc === 0); // sources nationales (Bison Futé, Autobahn, NDW…) = grands axes
+  const multi = (e.sources?.length ?? 1) >= 2;
+  const sev = e.severity;
+  let z;
+  switch (e.type) {
+    case "weather": case "flood": return 0;
+    case "hotspot": return 15;
+    case "fuel": return 14;
+    case "accident": z = main ? (sev >= 3 ? 0 : 9) : rc === 1 ? 10 : 12; break;
+    case "jam": z = main ? (sev >= 3 ? 0 : 9) : 11; break;
+    case "danger": z = main ? (sev >= 3 ? 0 : 10) : 12; break;
+    case "closure": z = main ? (sev >= 3 ? 0 : 9) : rc === 1 ? 11 : sev >= 4 ? 12 : 14; break;
+    case "lanes": z = main ? (sev >= 3 ? 10 : 11) : rc === 1 ? 13 : 15; break;
+    case "works": z = main ? (sev >= 3 ? 11 : 12) : rc === 1 ? 14 : 15; break;
+    default: z = 12;
+  }
+  if (multi && e.type !== "works") z = Math.min(z, main ? 9 : 12);
+  return z;
+}
+
 function bisonFuteEvent(src, e) {
   const map = { closure: "closure", accident: "accident", slow: "jam", obstacle: "danger", conditions: "danger", works: "works", lanes: "lanes" };
   const type = map[e.kind];
@@ -1249,6 +1286,7 @@ export async function register({ route, store, log }) {
     }
     const t0 = Date.now();
     analyzed = analyze(list, weights, names, now);
+    for (const e of analyzed) e.minZoom = minZoomOf(e);
     dirty = false;
     lastAnalysis = { at: now, input: list.length, output: analyzed.length, merged: list.length - analyzed.length, ms: Date.now() - t0 };
   }
@@ -1315,7 +1353,7 @@ export async function register({ route, store, log }) {
       id: e.id, type: e.type, severity: e.severity, title: e.title, description: e.description, original: e.original, lang: e.lang,
       road: e.road, direction: e.direction, lanes: e.lanes, start: e.start, end: e.end, delay: e.delay, speed: e.speed,
       blocking: e.blocking, confidence: e.confidence, sources: e.sources, merged: e.merged, relatedJam: e.relatedJam ?? null,
-      line: e.line, extra: e.extra,
+      line: e.line, extra: e.extra, minZoom: e.minZoom ?? 0,
     },
   });
 
@@ -1329,11 +1367,8 @@ export async function register({ route, store, log }) {
     const feats = [];
     for (const e of analyzed) {
       if (!inBbox(e.point, box) && !(e.line && e.line.some((p) => inBbox(p, box)))) continue;
-      // densité selon le zoom : au loin seulement l'important
-      if (e.type === "hotspot" && (zoom < 11 || (zoom < 13 && e.severity < 2))) continue;
-      if (e.type === "fuel" && zoom < 10) continue;
-      if ((e.type === "works" || e.type === "lanes") && e.severity <= 1 && zoom < 12) continue;
-      if (zoom < 9 && e.severity < 3 && e.type !== "weather" && e.type !== "flood") continue;
+      // densité selon le zoom (voir minZoomOf) ; un cran d'avance pour que le zoom suivant soit déjà là
+      if ((e.minZoom ?? 0) > zoom + 1) continue;
       feats.push(e);
     }
     feats.sort((a, b) => b.severity - a.severity || TYPES[a.type].rank - TYPES[b.type].rank);
@@ -1466,4 +1501,4 @@ export async function register({ route, store, log }) {
 }
 
 /** Pour les tests hors ligne (scripts) : rien d'autre ne doit s'en servir. */
-export const _internals = { SOURCES, parseDatex, analyze, estimateDelay, makeEvent };
+export const _internals = { SOURCES, parseDatex, analyze, estimateDelay, makeEvent, minZoomOf, roadClass };

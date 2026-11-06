@@ -189,7 +189,8 @@ final class TrafficDriveController {
         case .lanes: return e.severity >= 2 ? (5_000, 800) : nil
         case .works: return e.severity >= 2 ? (2_000, 500) : nil
         case .weather, .flood: return e.severity >= 3 ? (20_000, 0) : nil
-        case .hotspot: return e.severity >= 3 ? (800, 0) : nil
+        // points noirs : annoncés en conduite plutôt qu'affichés en permanence sur la carte
+        case .hotspot: return e.severity >= 3 ? (800, 0) : e.severity >= 2 ? (350, 0) : nil
         case .fuel: return nil
         }
     }
