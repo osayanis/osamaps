@@ -225,6 +225,11 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
     func nearby(_ cat: SearchCategory, center: CLLocationCoordinate2D) async throws -> [SearchResult] {
         let key = String(format: "near|%@|%.2f,%.2f", cat.id, center.latitude, center.longitude)
         if let hit = cached(key) { return hit }
+        // mode camion : aires et parkings poids lourds d'OpenStreetMap (serveur) ; repli sur Apple si rien
+        if cat.truckOnly, let list = try? await Self.truckStops(center, km: cat.maxKm), !list.isEmpty {
+            store(key, list)
+            return list
+        }
         let ways: [() async throws -> [MKMapItem]] = cat.textFirst
             ? [{ try await self.nearbyText(cat, center) }, { try await self.nearbyPOI(cat, center) }]
             : [{ try await self.nearbyPOI(cat, center) }, { try await self.nearbyText(cat, center) }]
@@ -253,6 +258,29 @@ final class SearchEngine: NSObject, MKLocalSearchCompleterDelegate {
         out = Array(out.prefix(20))
         store(key, out)
         return out
+    }
+
+    private struct TruckStops: Decodable {
+        struct Item: Decodable { var id: String; var name: String?; var lat: Double; var lng: Double; var kind: String; var capacity: Int?; var km: Double? }
+        var items: [Item]
+    }
+
+    /// `GET truck/stops` (Overpass en cache côté serveur : peut répondre partiellement au premier appel).
+    private static func truckStops(_ c: CLLocationCoordinate2D, km: Double) async throws -> [SearchResult] {
+        let path = String(format: "truck/stops?lat=%.4f&lng=%.4f&km=%.0f", c.latitude, c.longitude, min(60, km))
+        let r: TruckStops = try await API.get(path, timeout: 25)
+        return r.items.map { i in
+            let label = switch i.kind {
+            case "services": "Aire de services"
+            case "rest_area": "Aire de repos poids lourds"
+            case "fuel": "Station poids lourds"
+            default: "Parking poids lourds"
+            }
+            var detail = label
+            if let cap = i.capacity { detail += " · \(cap) places PL" }
+            return SearchResult(id: "truck-\(i.id)", name: i.name ?? label, detail: detail, lat: i.lat, lng: i.lng,
+                                kind: i.kind == "fuel" ? "fuel" : "parking", typeLabel: label, source: .local, rel: 1)
+        }
     }
 
     private func nearbyPOI(_ cat: SearchCategory, _ center: CLLocationCoordinate2D) async throws -> [MKMapItem] {
