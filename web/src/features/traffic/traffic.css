@@ -33,6 +33,15 @@
 .traffic-sheet-dim { color: var(--dim); white-space: pre-line; }
 .traffic-sheet-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: 12px; font-weight: 600; }
 
+.traffic-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.traffic-fact { padding: 5px 10px; border-radius: 999px; background: var(--surface-hi); font-size: 12px; font-weight: 650; }
+.traffic-original summary { cursor: pointer; font-size: 13px; font-weight: 650; color: var(--dim); }
+.traffic-original p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; }
+.traffic-conf { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; color: var(--dim); }
+.traffic-conf-bars { display: inline-flex; gap: 3px; }
+.traffic-conf-bars i { width: 14px; height: 5px; border-radius: 3px; background: var(--surface-hi); }
+.traffic-conf-bars i.on { background: var(--text); }
+
 /* Réglages */
 .traffic-settings { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .traffic-settings h3 { margin: 0; font-size: 17px; }
