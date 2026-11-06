@@ -73,7 +73,7 @@ struct SearchBarView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(SearchCategory.all) { c in
+                    ForEach(SearchCategory.visible) { c in
                         let on = search.category?.id == c.id
                         Button {
                             withAnimation(Osa.anim) { proxy.scrollTo(c.id, anchor: .center) }

@@ -52,6 +52,8 @@
 .guidance-limit { width: 50px; height: 50px; border-radius: 50%; background: #fff; border: 5px solid var(--jam); display: grid; place-items: center; box-shadow: var(--shadow); }
 .guidance-limit b { color: #000; font-size: 19px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .guidance-limit.is-wide b { font-size: 15px; letter-spacing: -0.05em; }
+.guidance-limit-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.guidance-limit-pl { padding: 1px 7px; border-radius: 6px; background: #fff; color: #000; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; box-shadow: var(--shadow); }
 
 /* --- barre du bas --- */
 .guidance-bar { position: relative; overflow: hidden; width: min(544px, calc(100% - 16px)) !important; margin: 0 8px calc(8px + var(--safe-bottom)); border-radius: var(--radius-l); padding: 14px 12px 12px; animation: guidance-up 260ms var(--ease-drawer); }

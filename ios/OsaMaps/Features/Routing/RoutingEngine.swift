@@ -25,6 +25,8 @@ struct RoutingOptions: Sendable {
     /// Cap au départ (évite les demi-tours absurdes pendant un recalcul).
     var heading: Double?
     var depart: RoutingDepart?
+    /// Véhicule (costing Valhalla « truck » avec ses dimensions pour les camions).
+    var vehicle = Vehicle()
 }
 
 /// Ce que le module garde en plus de la `Route` du Core, par id d'itinéraire.
@@ -58,12 +60,20 @@ struct RoutingRequest: Encodable, Sendable {
         var heading: Int?
         var heading_tolerance: Int?
     }
-    struct Auto: Encodable, Sendable {
+    /// Options d'un costing (auto ou truck) : seuls les champs renseignés sont envoyés.
+    struct Opts: Encodable, Sendable {
         var use_tolls: Double?
         var use_highways: Double?
         var use_ferry: Double?
+        var height: Double?
+        var width: Double?
+        var length: Double?
+        var weight: Double?
+        var axle_load: Double?
+        var hazmat: Bool?
+        var top_speed: Int?
     }
-    struct Costing: Encodable, Sendable { var auto: Auto }
+    struct Costing: Encodable, Sendable { var auto: Opts?; var truck: Opts? }
     struct Directions: Encodable, Sendable { var units = "kilometers" }
 
     var locations: [Location]
@@ -83,9 +93,19 @@ struct RoutingRequest: Encodable, Sendable {
             }
             return l
         }
-        costing_options = Costing(auto: Auto(use_tolls: o.avoidTolls ? 0 : nil,
-                                             use_highways: o.avoidHighways ? 0 : nil,
-                                             use_ferry: o.avoidFerries ? 0 : nil))
+        var opts = Opts(use_tolls: o.avoidTolls ? 0 : nil, use_highways: o.avoidHighways ? 0 : nil,
+                        use_ferry: o.avoidFerries ? 0 : nil)
+        let v = o.vehicle
+        if v.isTruck {
+            costing = "truck"
+            opts.height = v.height; opts.width = v.width; opts.length = v.length
+            opts.weight = v.weight; opts.axle_load = v.axleLoad
+            opts.hazmat = v.hazmat ? true : nil
+            opts.top_speed = RoutingTruck.topSpeed(v)
+            costing_options = Costing(truck: opts)
+        } else {
+            costing_options = Costing(auto: opts)
+        }
         let multi = points.count > 2
         alternates = multi || o.depart != nil ? 0 : max(0, min(2, o.alternates))
         date_time = o.depart
@@ -187,18 +207,28 @@ private struct RoutingTraceResponse: Decodable {
         var b: Int
         var e: Int
         var kmh: Int?
-        private enum K: String, CodingKey { case b, e, kmh, begin_shape_index, end_shape_index, speed_limit }
+        /// Classe de route Valhalla (motorway, trunk, primary…) et limite poids lourds explicite (maxspeed:hgv).
+        var rc: String?
+        var hgv: Int?
+        private enum K: String, CodingKey { case b, e, kmh, rc, hgv, begin_shape_index, end_shape_index, speed_limit, road_class, truck_speed }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: K.self)
+            func speed(_ k: K) -> Int? {
+                let v = (try? c.decode(Double.self, forKey: k)) ?? 0
+                return v > 0 && v < 200 ? Int(v.rounded()) : nil
+            }
             if let b = try? c.decode(Int.self, forKey: .b) {
                 self.b = b
                 e = (try? c.decode(Int.self, forKey: .e)) ?? b
                 kmh = try? c.decode(Int.self, forKey: .kmh)
+                rc = try? c.decode(String.self, forKey: .rc)
+                hgv = speed(.hgv)
             } else {
                 b = (try? c.decode(Int.self, forKey: .begin_shape_index)) ?? 0
                 e = (try? c.decode(Int.self, forKey: .end_shape_index)) ?? b
-                let v = (try? c.decode(Double.self, forKey: .speed_limit)) ?? 0
-                kmh = v > 0 && v < 200 ? Int(v.rounded()) : nil
+                kmh = speed(.speed_limit)
+                rc = try? c.decode(String.self, forKey: .road_class)
+                hgv = speed(.truck_speed)
             }
         }
     }
@@ -208,7 +238,7 @@ private struct RoutingTraceResponse: Decodable {
 private struct RoutingTraceProxyBody: Encodable { var encoded_polyline: String }
 private struct RoutingTraceDirectBody: Encodable {
     struct Filters: Encodable {
-        var attributes = ["edge.speed_limit", "edge.begin_shape_index", "edge.end_shape_index"]
+        var attributes = ["edge.speed_limit", "edge.truck_speed", "edge.road_class", "edge.begin_shape_index", "edge.end_shape_index"]
         var action = "include"
     }
     var encoded_polyline: String
@@ -392,8 +422,8 @@ enum RoutingEngine {
     }
 
     /// Limites de vitesse le long du tracé (/trace_attributes, edge_walk), par morceaux d'environ 90 km.
-    /// Renvoie des plages compactes triées par index.
-    static func speedLimits(_ coords: [Coord]) async throws -> [Route.SpeedLimit] {
+    /// Renvoie des plages compactes triées par index. Camions : limite poids lourds (voir `RoutingTruck`).
+    static func speedLimits(_ coords: [Coord], vehicle: Vehicle = Vehicle()) async throws -> [Route.SpeedLimit] {
         let cum = Geo.cumulative(coords.map(\.coordinate))
         let chunkM = 90_000.0, chunkPts = 6000, maxChunks = 12
         var chunks: [(Int, Int)] = []
@@ -428,8 +458,9 @@ enum RoutingEngine {
             }
             for e in res.edges ?? [] {
                 let from = a + e.b
-                if let lastR = ranges.last, lastR.kmh == e.kmh { continue }
-                if let lastR = ranges.last, lastR.from == from { ranges[ranges.count - 1].kmh = e.kmh } else { ranges.append(.init(from: from, kmh: e.kmh)) }
+                let kmh = vehicle.isTruck ? RoutingTruck.limit(car: e.kmh, hgv: e.hgv, roadClass: e.rc, vehicle: vehicle) : e.kmh
+                if let lastR = ranges.last, lastR.kmh == kmh { continue }
+                if let lastR = ranges.last, lastR.from == from { ranges[ranges.count - 1].kmh = kmh } else { ranges.append(.init(from: from, kmh: kmh)) }
             }
         }
         // tout a échoué (hors ligne) : on n'invente pas de « limites inconnues », on laisse réessayer

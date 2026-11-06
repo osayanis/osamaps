@@ -85,6 +85,16 @@ final class RoutingModel {
                 self?.computePreview()
             }
         }
+        // véhicule changé (réglages, badge) pendant l'aperçu → nouveau calcul
+        RoutingObserve.watch({ Prefs.shared.vehicle }) { [weak self] _ in
+            guard let self, self.core.mode == .preview else { return }
+            self.prefsTask?.cancel()
+            self.prefsTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                self?.computePreview()
+            }
+        }
         RoutingObserve.watch({ [weak self] in self?.alternates ?? true }) { [weak self] _ in
             guard let self, self.core.mode == .preview else { return }
             self.computePreview()
@@ -128,7 +138,7 @@ final class RoutingModel {
     private func options(alternates alt: Int? = nil, heading: Double? = nil, depart: RoutingDepart? = nil) -> RoutingOptions {
         let p = Prefs.shared
         return RoutingOptions(avoidTolls: p.avoidTolls, avoidHighways: p.avoidHighways, avoidFerries: p.avoidFerries,
-                              alternates: alt ?? (alternates ? 2 : 0), heading: heading, depart: depart)
+                              alternates: alt ?? (alternates ? 2 : 0), heading: heading, depart: depart, vehicle: p.vehicle)
     }
 
     private func storeMeta(_ list: [RoutingComputed]) {
@@ -144,10 +154,10 @@ final class RoutingModel {
 
     func ensureSpeedLimits(_ route: Route?) {
         guard let route, route.speedLimits == nil, speedJobs[route.id] == nil else { return }
-        let id = route.id, coords = route.coords
+        let id = route.id, coords = route.coords, vehicle = Prefs.shared.vehicle
         speedJobs[id] = Task { @MainActor [weak self] in
             defer { self?.speedJobs[id] = nil }
-            guard let limits = try? await RoutingEngine.speedLimits(coords), !Task.isCancelled else { return }
+            guard let limits = try? await RoutingEngine.speedLimits(coords, vehicle: vehicle), !Task.isCancelled else { return }
             let core = Core.shared
             // on remplace l'itinéraire en GARDANT le même id
             guard let i = core.routes.firstIndex(where: { $0.id == id }) else { return }
@@ -190,7 +200,8 @@ final class RoutingModel {
         let opts = options(depart: depart)
         previewTask = Task { @MainActor [weak self] in
             do {
-                let list = try await RoutingEngine.compute(points, options: opts)
+                // le plus rapide en premier (et sélectionné) : Valhalla classe par coût, qui en camion n'est pas la durée
+                let list = try await RoutingEngine.compute(points, options: opts).sorted { $0.route.duration < $1.route.duration }
                 guard let self, !Task.isCancelled, self.core.mode == .preview else { return }
                 self.storeMeta(list)
                 self.core.routes = list.map(\.route)

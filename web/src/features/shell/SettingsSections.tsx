@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { usePrefs } from "../../core/prefs";
+import { usePrefs, vehiclePreset } from "../../core/prefs";
 import { core, useCore } from "../../core/store";
 import { loadLocal, saveLocal } from "../../core/identity";
 import { DEFAULT_CENTER } from "../../core/geo";
@@ -7,6 +7,7 @@ import { sunTimes } from "./sun";
 import { usePwa, canInstall, installApp, wipeLocalData } from "./pwa";
 import { haptic } from "./haptics";
 import { Switch } from "./Onboarding";
+import { VehicleRow } from "./Vehicle";
 import {
   IconAuto, IconSun, IconMoon, IconDownload, IconRefresh, IconTrash, IconHeart, IconExternal,
 } from "./icons";
@@ -96,6 +97,15 @@ export function GeneralSettings() {
   );
 }
 
+/** Section « Véhicule » (juste sous « Général ») : voiture, camion, poids lourd, super lourd + dimensions. */
+export function VehicleSettings() {
+  return (
+    <Section title="Véhicule" place="top">
+      <VehicleRow />
+    </Section>
+  );
+}
+
 /** Section « Accueil, données, à propos » (en bas des réglages). */
 export function AboutSettings() {
   const setPref = usePrefs((s) => s.setPref);
@@ -113,6 +123,9 @@ export function AboutSettings() {
   const wipe = () => {
     if (!confirm) { haptic("warn"); setConfirm(true); return; }
     haptic("error");
+    // le profil véhicule repart aussi de zéro (l'accueil le redemandera)
+    setPref("vehicle", vehiclePreset("car"));
+    setPref("vehicleChosen", false);
     void wipeLocalData();
   };
 

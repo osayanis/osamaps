@@ -1,6 +1,10 @@
 // Itinéraires : petit proxy vers Valhalla (FOSSGIS) pour le ménager.
-//   POST /routing/route  { locations, costing_options?, alternates?, date_time? }  → réponse Valhalla brute
-//   POST /routing/trace  { encoded_polyline }                                      → { edges: [{ b, e, kmh }] }
+//   POST /routing/route  { locations, costing?, costing_options?, alternates?, date_time? }  → réponse Valhalla brute
+//        costing "auto" (défaut) ou "truck" : costing_options.truck = { height, width, length (m), weight,
+//        axle_load (t), hazmat, top_speed (km/h), use_tolls, use_highways, use_ferry } (tout validé et borné)
+//   POST /routing/trace  { encoded_polyline }  → { edges: [{ b, e, kmh, rc, hgv }] }
+//        kmh = limite OSM (voitures), rc = classe de route (motorway, trunk, primary…), hgv = limite poids lourds
+//        explicite (maxspeed:hgv) quand elle existe : le client en déduit la limite de SON véhicule.
 // - valide et reconstruit chaque requête (rien du client n'est transmis tel quel) ;
 // - cache mémoire (mêmes requêtes = zéro appel) ;
 // - file d'attente globale : au plus 1 appel sortant par seconde, User-Agent générique ;
@@ -82,13 +86,23 @@ function cleanRoute(body) {
     if (num(l.heading, 0, 360)) { out.heading = Math.round(l.heading); out.heading_tolerance = 45; }
     return out;
   });
-  const auto = {};
-  const co = body.costing_options?.auto ?? {};
-  for (const k of ["use_tolls", "use_highways", "use_ferry"]) if (num(co[k], 0, 1)) auto[k] = co[k];
+  const truck = body.costing === "truck";
+  const costing = truck ? "truck" : "auto";
+  const co = body.costing_options?.[costing] ?? {};
+  const opts = {};
+  for (const k of ["use_tolls", "use_highways", "use_ferry"]) if (num(co[k], 0, 1)) opts[k] = co[k];
+  if (truck) {
+    // gabarit et poids : bornés à des valeurs plausibles (convoi exceptionnel compris), arrondis (cache)
+    const dims = { height: [1, 7], width: [1, 7], length: [2, 60], weight: [0.5, 250], axle_load: [0.5, 40] };
+    for (const [k, [min, max]] of Object.entries(dims)) if (num(co[k], min, max)) opts[k] = Math.round(co[k] * 100) / 100;
+    if (co.hazmat === true) opts.hazmat = true;
+    // vitesse maximale du véhicule (limiteur des poids lourds : 90 km/h) : durées réalistes
+    opts.top_speed = num(co.top_speed, 30, 130) ? Math.round(co.top_speed) : 90;
+  }
   const req = {
     locations,
-    costing: "auto",
-    costing_options: { auto },
+    costing,
+    costing_options: { [costing]: opts },
     language: "fr-FR",
     directions_options: { units: "kilometers" },
     alternates: num(body.alternates, 0, 2) ? Math.round(body.alternates) : 0,
@@ -117,22 +131,28 @@ export async function register({ route, log }) {
     if (typeof poly !== "string" || poly.length < 4 || poly.length > 60_000 || !/^[\x3f-\x7e]+$/.test(poly)) {
       throw new HttpError(400, "tracé invalide");
     }
-    const k = "t" + key(poly);
+    const k = "t2" + key(poly);
     const hit = cacheGet(k);
     if (hit) return hit;
     const data = await queued(() => valhalla("trace_attributes", {
       encoded_polyline: poly,
       shape_match: "edge_walk",
       costing: "auto",
-      filters: { attributes: ["edge.speed_limit", "edge.begin_shape_index", "edge.end_shape_index"], action: "include" },
+      filters: {
+        attributes: ["edge.speed_limit", "edge.truck_speed", "edge.road_class", "edge.begin_shape_index", "edge.end_shape_index"],
+        action: "include",
+      },
     }));
+    const kmh = (v) => (typeof v === "number" && v > 0 && v < 200 ? v : null);
     // réponse compacte : seulement ce qui sert (limite par portion du tracé)
     const out = {
-      edges: (data.edges || []).map((e) => ({
-        b: e.begin_shape_index,
-        e: e.end_shape_index,
-        kmh: typeof e.speed_limit === "number" && e.speed_limit > 0 && e.speed_limit < 200 ? e.speed_limit : null,
-      })),
+      edges: (data.edges || []).map((e) => {
+        const o = { b: e.begin_shape_index, e: e.end_shape_index, kmh: kmh(e.speed_limit) };
+        if (typeof e.road_class === "string") o.rc = e.road_class;
+        const hgv = kmh(e.truck_speed);
+        if (hgv) o.hgv = hgv;
+        return o;
+      }),
     };
     cachePut(k, out, TRACE_TTL);
     return out;

@@ -36,8 +36,9 @@ struct Vehicle: Codable, Hashable, Sendable {
             switch self {
             case .car: "car.fill"
             case .truck: "box.truck.fill"
-            case .heavy: "truck.box.fill"
-            case .superheavy: "truck.box.badge.clock.fill"
+            // pas de semi-remorque dans SF Symbols (iOS 17) : le poids, puis le gyrophare du convoi exceptionnel
+            case .heavy: "scalemass.fill"
+            case .superheavy: "light.beacon.max.fill"
             }
         }
     }

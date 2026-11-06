@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { core, useCore } from "../../core/store";
 import { parseCoords, searchPlaces, norm, type SearchResult } from "./api";
-import { CATEGORIES } from "./categories";
+import { visibleCategories } from "./categories";
+import { usePrefs } from "../../core/prefs";
 import { closeCategory, runCategory } from "./nearby";
 import { Icon } from "./icons";
 import { distanceLabel, kindIcon } from "./format";
@@ -31,6 +32,7 @@ export function SearchBar() {
   const mode = useCore((s) => s.mode);
   const panel = useCore((s) => s.panel);
   const position = useCore((s) => s.position);
+  const truck = usePrefs((s) => s.vehicle.kind !== "car");
   const { query, focused, picking, category, home, work, favorites, recents, set } = useSearch();
   const input = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -196,7 +198,7 @@ export function SearchBar() {
 
       {showChips && (
         <div className="search-chips" role="toolbar" aria-label="Chercher autour">
-          {CATEGORIES.map((c) => {
+          {visibleCategories(truck).map((c) => {
             const on = category?.id === c.id;
             return (
               <button

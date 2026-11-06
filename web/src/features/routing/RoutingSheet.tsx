@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useCore, type Route } from "../../core/store";
-import { usePrefs } from "../../core/prefs";
+import { usePrefs, VEHICLE_LABELS, type Vehicle } from "../../core/prefs";
+import { bansApply, bansBetween, idfBans, idfPassages } from "./truck";
 import { formatDistance, formatDuration, formatEta } from "../../core/geometry";
 import { useRouting, routing, localStamp, formatStamp, placeFrom, type DepartChoice } from "./state";
 import { addStop, cancelPreview, computePreview, moveStop, removeStop, selectRoute, setDepart, startDrive } from "./controller";
@@ -25,6 +26,8 @@ function PreviewSheet() {
   const avoidTolls = usePrefs((s) => s.avoidTolls);
   const avoidHighways = usePrefs((s) => s.avoidHighways);
   const setPref = usePrefs((s) => s.setPref);
+  const vehicle = usePrefs((s) => s.vehicle);
+  const truck = vehicle.kind !== "car";
 
   // hauteur du panneau → marges du cadrage de la carte
   useLayoutEffect(() => {
@@ -51,7 +54,7 @@ function PreviewSheet() {
       <div className="routing-grab" aria-hidden="true" />
       <header className="routing-head">
         <div className="routing-head-text">
-          <span className="routing-eyebrow">{stops.length ? `Via ${stops.length} étape${stops.length > 1 ? "s" : ""}, vers` : "Itinéraire vers"}</span>
+          <span className="routing-eyebrow">{truck ? `${VEHICLE_LABELS[vehicle.kind].label} · ` : ""}{stops.length ? `Via ${stops.length} étape${stops.length > 1 ? "s" : ""}, vers` : "Itinéraire vers"}</span>
           <h2 className="routing-title">{destination?.name ?? "Destination"}</h2>
         </div>
         <button className="routing-close" onClick={cancelPreview} aria-label="Annuler l'itinéraire"><IconClose /></button>
@@ -65,6 +68,7 @@ function PreviewSheet() {
             {retryable && <button className="pill secondary" onClick={computePreview}><IconRetry /> Réessayer</button>}
           </div>
         )}
+        {truck && active && !section && <TruckNotices route={active} vehicle={vehicle} depart={depart} departAt={meta[active.id]?.departAt} />}
         {routes.length > 0 && (
           <div className={`routing-cards${status === "loading" ? " is-busy" : ""}`} role="radiogroup" aria-label="Itinéraires proposés">
             {routes.map((r, i) => (
@@ -238,6 +242,40 @@ function StopsPanel() {
       <button className={`routing-mini routing-map-pick${pickOnMap ? " is-on" : ""}`} onClick={() => routing().set({ pickOnMap: !pickOnMap })}>
         <IconPin /> {pickOnMap ? "Touchez la carte pour poser l'étape…" : "Choisir sur la carte"}
       </button>
+    </div>
+  );
+}
+
+/** Poids lourds : interdictions de circuler (> 7,5 t) et avertissement convoi exceptionnel (couleur danger = état). */
+function TruckNotices({ route, vehicle, depart, departAt }: { route: Route; vehicle: Vehicle; depart: DepartChoice | null; departAt?: string }) {
+  let start = new Date();
+  if (departAt) start = new Date(departAt);
+  else if (depart) {
+    const d = new Date(depart.value);
+    start = depart.type === 1 ? d : new Date(d.getTime() - route.duration * 1000);
+  }
+  const end = new Date(start.getTime() + route.duration * 1000);
+  const now = Date.now();
+  const bans = bansApply(vehicle)
+    ? [
+      ...bansBetween(start, end).filter((b) => !b.regional || route.coords.some(([lng, lat]) => lat > 44.6 && lat < 46.5 && lng > 4.7 && lng < 7.2)),
+      ...idfBans(start, idfPassages(route)),
+    ]
+    : [];
+  if (vehicle.kind !== "superheavy" && !bans.length) return null;
+  return (
+    <div className="routing-truck">
+      {vehicle.kind === "superheavy" && (
+        <p className="routing-truck-note" role="note">
+          Convoi exceptionnel : l'itinéraire réel est celui imposé par ton arrêté préfectoral de transport exceptionnel. OsaMaps n'est qu'une aide.
+        </p>
+      )}
+      {bans.map((b) => (
+        <div key={`${b.start.getTime()}-${b.regional ?? ""}`} className="routing-truck-note" role="alert">
+          <b>{b.start.getTime() <= now && b.end.getTime() > now ? "Interdiction en cours" : "Interdiction de circuler"}</b>
+          <span>{b.regional ? `Sur ${b.regional}, c` : "C"}irculation interdite aux poids lourds de plus de 7,5 t {b.label}. Ton trajet tombe dans cette période (sauf dérogation).</span>
+        </div>
+      ))}
     </div>
   );
 }

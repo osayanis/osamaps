@@ -53,7 +53,8 @@ private struct RoutingPreviewSheet: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.stops.isEmpty ? "Itinéraire vers" : "Via \(model.stops.count) étape\(model.stops.count > 1 ? "s" : ""), vers")
+                Text((prefs.vehicle.isTruck ? "\(prefs.vehicle.kind.label) · " : "")
+                     + (model.stops.isEmpty ? "Itinéraire vers" : "Via \(model.stops.count) étape\(model.stops.count > 1 ? "s" : ""), vers"))
                     .font(.osa(13, .semibold))
                     .foregroundStyle(Osa.dim)
                 Text(core.destination?.name ?? "Destination")
@@ -92,6 +93,10 @@ private struct RoutingPreviewSheet: View {
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .osaCard()
+            }
+            // avertissements poids lourds en premier : interdiction de circuler, convoi exceptionnel
+            if model.section == nil, prefs.vehicle.isTruck, let r = core.route {
+                RoutingTruckNotices(route: r, meta: model.meta[r.id], depart: model.depart, vehicle: prefs.vehicle)
             }
             if !core.routes.isEmpty {
                 let fastest = core.routes.map(\.duration).min() ?? 0
@@ -524,5 +529,68 @@ private struct RoutingStopsPanel: View {
         .buttonStyle(RoutingPressStyle())
         .disabled(disabled)
         .accessibilityLabel(label)
+    }
+}
+
+// MARK: - Poids lourds : interdictions de circuler, convoi exceptionnel
+
+/// Avertissements propres aux camions sous les cartes d'itinéraire (couleur « danger » = état).
+private struct RoutingTruckNotices: View {
+    let route: Route
+    let meta: RoutingMeta?
+    let depart: RoutingDepart?
+    let vehicle: Vehicle
+
+    var body: some View {
+        let bans = currentBans
+        VStack(alignment: .leading, spacing: 6) {
+            if vehicle.kind == .superheavy {
+                notice("exclamationmark.triangle.fill",
+                       "Convoi exceptionnel : l'itinéraire réel est celui imposé par ton arrêté préfectoral de transport exceptionnel. OsaMaps n'est qu'une aide.")
+            }
+            ForEach(Array(bans.enumerated()), id: \.offset) { _, b in
+                notice("hand.raised.fill",
+                       (b.regional.map { "Sur \($0), c" } ?? "C") + "irculation interdite aux poids lourds de plus de 7,5 t \(b.label). Ton trajet tombe dans cette période (sauf dérogation).",
+                       title: b.start <= Date() && b.end > Date() ? "Interdiction en cours" : "Interdiction de circuler")
+            }
+        }
+    }
+
+    /// Trajet [départ, arrivée] : heure choisie (Valhalla renvoie les heures locales) ou maintenant.
+    private var currentBans: [RoutingTruck.Ban] {
+        guard RoutingTruck.bansApply(vehicle) else { return [] }
+        var start = Date()
+        if let d = meta?.departAt.flatMap(RoutingTime.date) { start = d }
+        else if let depart, let d = RoutingTime.date(depart.value) {
+            start = depart.type == 1 ? d : d.addingTimeInterval(-route.duration)
+        }
+        let end = start.addingTimeInterval(route.duration)
+        let national = RoutingTruck.bans(from: start, to: end).filter { b in
+            guard b.regional != nil else { return true }
+            // hiver Auvergne-Rhône-Alpes : seulement si le tracé passe par les Alpes du Nord
+            return route.coords.contains { $0.lat > 44.6 && $0.lat < 46.5 && $0.lng > 4.7 && $0.lng < 7.2 }
+        }
+        return national + RoutingTruck.idfBans(start: start, passes: RoutingTruck.idfPassages(route))
+    }
+
+    private func notice(_ icon: String, _ text: String, title: String? = nil) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Osa.danger)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                if let title { Text(title).font(.osa(14, .bold)).foregroundStyle(Osa.text) }
+                Text(text)
+                    .font(.osa(13, .medium))
+                    .foregroundStyle(title == nil ? Osa.text : Osa.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Osa.danger.opacity(0.10), in: RoundedRectangle(cornerRadius: Osa.radiusM, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Osa.radiusM, style: .continuous).strokeBorder(Osa.danger.opacity(0.35)))
+        .accessibilityElement(children: .combine)
     }
 }

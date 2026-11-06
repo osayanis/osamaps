@@ -186,6 +186,8 @@ struct SearchCategory: Identifiable, Hashable {
     var aliases: [String] = []
     /// Recherche texte d'abord (la catégorie Apple seule est trop large ou ne répond pas).
     var textFirst = false
+    /// Seulement en mode camion (Prefs.shared.vehicle) ; résultats OSM du serveur (`truck/stops`).
+    var truckOnly = false
 
     static let all: [SearchCategory] = [
         .init(id: "fuel", label: "Essence", single: "Station-service", symbol: "fuelpump.fill", poi: [.gasStation],
@@ -210,13 +212,21 @@ struct SearchCategory: Identifiable, Hashable {
               query: "hôpital", maxKm: 60, aliases: ["hopital", "urgences", "clinique"]),
     ]
 
-    static func byId(_ id: String) -> SearchCategory? { all.first { $0.id == id } }
+    /// Aires et parkings poids lourds (OpenStreetMap, via le serveur) : proposée en tête en mode camion.
+    static let truckStops = SearchCategory(id: "truckstop", label: "Aires PL", single: "Aire poids lourds", symbol: "parkingsign.circle.fill",
+                                           poi: [.parking, .gasStation], query: "aire poids lourds", maxKm: 40,
+                                           aliases: ["aire", "poids lourd", "routier", "relais routier", "parking pl"], truckOnly: true)
+
+    /// Catégories proposées (la catégorie camion seulement en mode camion).
+    @MainActor static var visible: [SearchCategory] { Prefs.shared.vehicle.isTruck ? [truckStops] + all : all }
+
+    static func byId(_ id: String) -> SearchCategory? { id == truckStops.id ? truckStops : all.first { $0.id == id } }
 
     /// Catégorie évoquée par une requête (« boul » → Boulangerie).
-    static func matching(_ q: String) -> SearchCategory? {
+    @MainActor static func matching(_ q: String) -> SearchCategory? {
         let n = SearchText.norm(q)
         guard n.count >= 3 else { return nil }
-        return all.first { c in
+        return visible.first { c in
             ([SearchText.norm(c.label)] + c.aliases).contains { $0.hasPrefix(n) || (n.hasPrefix($0) && n.count <= $0.count + 2) }
         }
     }

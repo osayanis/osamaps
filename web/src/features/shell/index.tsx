@@ -4,16 +4,17 @@ import { Onboarding } from "./Onboarding";
 import { Toasts } from "./Toasts";
 import { SettingsButton, CompassButton, RecenterButton, listenRecenter } from "./RailButtons";
 import { MapStyle } from "./MapStyle";
-import { GeneralSettings, AboutSettings } from "./SettingsSections";
+import { GeneralSettings, VehicleSettings, AboutSettings } from "./SettingsSections";
+import { VehicleSheet, VehicleBadge, applyVehicleParam } from "./Vehicle";
 
 function ShellOverlay() {
-  return <><Onboarding /><Toasts /></>;
+  return <><Onboarding /><VehicleSheet /><Toasts /></>;
 }
 function ShellRail() {
-  return <><SettingsButton /><CompassButton /><RecenterButton /></>;
+  return <><SettingsButton /><VehicleBadge /><CompassButton /><RecenterButton /></>;
 }
 function ShellSettings() {
-  return <><GeneralSettings /><AboutSettings /></>;
+  return <><GeneralSettings /><VehicleSettings /><AboutSettings /></>;
 }
 import { listenToasts } from "./toastStore";
 import { listenHaptics } from "./haptics";
@@ -50,6 +51,7 @@ export const shell: Feature = {
     { slot: "settings", order: 1, Component: ShellSettings },
   ],
   init: () => {
+    applyVehicleParam();
     const stops = [
       startLayoutClass(),
       listenToasts(),

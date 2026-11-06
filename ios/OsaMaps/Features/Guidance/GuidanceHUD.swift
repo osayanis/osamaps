@@ -272,16 +272,27 @@ struct GuidanceSpeed: View {
             .animation(.easeOut(duration: 0.2), value: g.speeding)
 
             if let limit = g.limitKmh {
-                Text("\(limit)")
-                    .font(.osa(limit >= 100 ? 16 : 20, .heavy))
-                    .monospacedDigit()
-                    .foregroundStyle(.black)
-                    .frame(width: 52, height: 52)
-                    .background(Circle().fill(.white))
-                    .overlay(Circle().strokeBorder(Osa.jam, lineWidth: 5))
-                    .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
-                    .accessibilityLabel("Limitation \(limit) km/h")
+                VStack(spacing: 3) {
+                    Text("\(limit)")
+                        .font(.osa(limit >= 100 ? 16 : 20, .heavy))
+                        .monospacedDigit()
+                        .foregroundStyle(.black)
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(.white))
+                        .overlay(Circle().strokeBorder(Osa.jam, lineWidth: 5))
+                        .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
+                    // mode camion : la limite affichée est celle des poids lourds (calculée par le module routing)
+                    if Prefs.shared.vehicle.isTruck {
+                        Text("PL")
+                            .font(.osa(10, .heavy))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Capsule().fill(.white))
+                    }
+                }
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Limitation \(Prefs.shared.vehicle.isTruck ? "poids lourds " : "")\(limit) km/h")
             }
         }
         .animation(Osa.anim, value: g.limitKmh)
