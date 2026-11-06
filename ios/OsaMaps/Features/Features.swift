@@ -12,4 +12,5 @@ let allFeatures: [Feature] = [
     friendsFeature,
     guidanceFeature,
     liveFeature,
+    musicFeature,
 ]
