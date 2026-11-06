@@ -258,20 +258,86 @@ private extension MascotLook {
 }
 
 /// Envoie l'apparence au serveur (`POST /mascot/look`) pour que les amis puissent la voir.
-/// Seulement : identifiant d'appareil (empreinte côté serveur), code ami, apparence. Regroupé (1,5 s).
+/// Seulement : identifiant d'appareil (empreinte côté serveur) et apparence. Le serveur retrouve tout seul
+/// le code ami attribué par le module friends. Regroupé (1,5 s) ; renvoyé au lancement si pas encore parti.
 @MainActor
 enum MascotLookSync {
     private static var task: Task<Void, Never>?
-    private struct Body: Encodable { var id: String; var code: String; var look: MascotLook }
+    private struct Body: Encodable { var id: String; var look: MascotLook }
     private struct Ok: Decodable { var ok: Bool? }
 
-    static func schedule() {
+    static func schedule(delay: Double = 1.5) {
         task?.cancel()
         task = Task {
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
-            let body = Body(id: Identity.deviceId, code: Identity.friendCode, look: MascotLookStore.shared.look)
-            _ = try? await API.post("mascot/look", body: body, as: Ok.self)
+            let look = MascotLookStore.shared.look
+            let r = try? await API.post("mascot/look", body: Body(id: Identity.deviceId, look: look), as: Ok.self)
+            if r?.ok == true { Store.save("mascot.lookSent", look) }
+        }
+    }
+
+    /// Au lancement : renvoie l'apparence si la dernière version n'est jamais arrivée au serveur.
+    static func catchUp() {
+        let sent: MascotLook? = Store.load("mascot.lookSent", default: nil)
+        let look = MascotLookStore.shared.look
+        if sent != look && (sent != nil || look != .standard) { schedule(delay: 4) }
+    }
+}
+
+/// Les apparences des amis (`GET /mascot/looks?pids=…`), pour le module friends : liste, fiche, carte.
+/// Les demandes des vues sont regroupées ; chaque ami est redemandé au plus toutes les 5 minutes.
+@MainActor
+@Observable
+final class MascotFriendLooks {
+    static let shared = MascotFriendLooks()
+    private(set) var looks: [String: MascotLook] = [:]
+    @ObservationIgnored private var asked: [String: Date] = [:]
+    @ObservationIgnored private var queue = Set<String>()
+    @ObservationIgnored private var task: Task<Void, Never>?
+    private struct Reply: Decodable { var looks: [String: MascotLook] }
+
+    /// L'apparence d'un ami (nil si inconnue : on garde ses initiales) ; la demande au serveur au besoin.
+    func look(_ pid: String) -> MascotLook? {
+        want(pid)
+        return looks[pid]
+    }
+
+    func want(_ pid: String) {
+        guard !pid.isEmpty else { return }
+        if let t = asked[pid], Date.now.timeIntervalSince(t) < 300 { return }
+        asked[pid] = .now
+        queue.insert(pid)
+        guard task == nil else { return }
+        task = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self else { return }
+            let pids = Array(self.queue.prefix(50))
+            self.queue.subtract(pids)
+            self.task = nil
+            let q = pids.compactMap { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_"))) }.joined(separator: ",")
+            guard let r = try? await API.get("mascot/looks?pids=\(q)", as: Reply.self) else { return }
+            for (k, v) in r.looks where self.looks[k] != v { self.looks[k] = v }
+            if !self.queue.isEmpty { self.queue.forEach { self.asked[$0] = nil }; let rest = self.queue; self.queue = []; rest.forEach(self.want) }
+        }
+    }
+}
+
+/// La tête de la mascotte d'un ami dans un rond (liste, fiche, marqueur sur la carte) ; ses initiales sinon.
+struct MascotFriendFace<Fallback: View>: View {
+    var pid: String
+    var size: CGFloat
+    @ViewBuilder var fallback: () -> Fallback
+
+    var body: some View {
+        if let look = MascotFriendLooks.shared.look(pid) {
+            MascotFigure(size: size * 0.78, style: look, blinks: false, head: true, animated: false)
+                .offset(y: size * 0.06)
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+        } else {
+            fallback()
         }
     }
 }

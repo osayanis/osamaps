@@ -6,7 +6,20 @@ struct FriendsAvatar: View {
     var name: String
     var live = false
     var size: CGFloat = 42
+    /// Avec le pid : la mascotte personnalisée de l'ami (module mascot), ses initiales sinon.
+    var pid: String?
     var body: some View {
+        if let pid {
+            MascotFriendFace(pid: pid, size: size) { initials }
+                .background(Osa.surfaceHi, in: Circle())
+                .overlay(Circle().strokeBorder(live ? Color.white : .clear, lineWidth: 2))
+                .accessibilityHidden(true)
+        } else {
+            initials
+        }
+    }
+
+    private var initials: some View {
         Text(FriendsUtil.initials(name))
             .font(.osa(size * 0.36, .heavy))
             .foregroundStyle(live ? .black : Osa.text)

@@ -395,6 +395,7 @@ final class MascotEngine {
         }
         observeMode()
         runLaunchScript()
+        MascotLookSync.catchUp()
     }
 
     /// Tests dans le Simulateur sans dépendre des liens : argument de lancement

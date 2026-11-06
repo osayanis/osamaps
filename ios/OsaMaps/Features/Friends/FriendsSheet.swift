@@ -173,7 +173,7 @@ struct FriendsList: View {
             status += " · \(Geo.formatDistance(Geo.distance(p.coordinate, loc.coordinate)))"
         }
         return HStack(spacing: 12) {
-            FriendsAvatar(name: f.name, live: f.loc != nil)
+            FriendsAvatar(name: f.name, live: f.loc != nil, pid: f.pid)
             VStack(alignment: .leading, spacing: 2) {
                 Text(f.name).font(.osa(16, .bold)).foregroundStyle(Osa.text).lineLimit(1)
                 Text(status).font(.osa(13, .medium)).lineLimit(1)
@@ -281,7 +281,7 @@ struct FriendsDetail: View {
             let away = at.flatMap { a in core.position.map { Geo.distance($0.coordinate, a) } }
             FriendsHead(title: f.name, back: back)
             HStack(spacing: 14) {
-                FriendsAvatar(name: f.name, live: f.loc != nil, size: 56)
+                FriendsAvatar(name: f.name, live: f.loc != nil, size: 56, pid: f.pid)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(FriendsUtil.statusLine(f)).font(.osa(16, .bold))
                         .foregroundStyle(f.loc?.drive != nil ? Osa.ok : Osa.text)
