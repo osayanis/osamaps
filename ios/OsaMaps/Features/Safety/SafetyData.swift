@@ -2,35 +2,67 @@ import Foundation
 import CoreLocation
 
 // Contrat serveur : server/features/safety.js
-//   GET  safety/zones?bbox=o,s,e,n   disques de zones de danger (JAMAIS l'emplacement d'un radar : décret 2012-3)
+//   GET  safety/segments?tiles=8/x/y,…  zones de danger par tuiles (tronçons de route ; JAMAIS l'emplacement d'un radar)
 //   GET  safety/zfe                  périmètres ZFE en vigueur (GeoJSON MultiPolygon)
 //   POST safety/pois {tiles:[z/x/y]} passages à niveau (lc) et écoles (sc), tuiles zoom 12
 //   GET  safety/status               état des jeux de données
 
-/// Un disque de zone de danger tel qu'envoyé par le serveur (centre décalé : jamais la position de l'appareil).
-struct SafetyZone: Codable, Hashable, Sendable {
-    var id: String
-    var lng: Double
-    var lat: Double
-    /// Rayon (m) = longueur réglementaire de la zone / 2.
-    var r: Double
+/// Une zone de danger telle qu'envoyée par le serveur (format compact).
+struct SafetyZoneDTO: Codable, Sendable {
+    /// Identifiant opaque (pas le numéro du radar).
+    var i: String
     /// "city" (300 m), "road" (2 km), "motorway" (4 km).
-    var kind: String
+    var k: String
+    /// Milieu du tronçon [lng, lat] (emplacement de l'icône), ou centre du disque de repli.
+    var m: [Double]
+    /// Tronçon : une polyline encodée (précision 5) par chaussée.
+    var p: [String]?
+    /// 1 : polylines dans le sens de circulation ; 0 : route à double sens.
+    var o: Int?
+    /// Repli (aucune route trouvée, ou tronçon pas encore calculé) : disque de rayon r (m).
+    var r: Double?
+}
 
-    var center: CLLocationCoordinate2D { .init(latitude: lat, longitude: lng) }
+/// Une zone de danger décodée : un TRONÇON de route (une ligne par chaussée) ou, en repli, un disque.
+/// L'appareil est quelque part entre 15 et 85 % du tronçon : le serveur ne dit jamais où.
+struct SafetyZone: Hashable, Sendable {
+    var id: String
+    var kind: String
+    /// Milieu du tronçon (l'icône) ou centre du disque.
+    var mid: CLLocationCoordinate2D
+    var lines: [[CLLocationCoordinate2D]]
+    var oneway: Bool
+    /// Disque de repli (m), nil pour un tronçon.
+    var radius: Double?
+    /// Longueur (m) : celle du tronçon, ou le diamètre du disque.
+    var length: Double
+
+    init(_ d: SafetyZoneDTO) {
+        id = d.i
+        kind = d.k
+        mid = .init(latitude: d.m.count > 1 ? d.m[1] : 0, longitude: d.m.first ?? 0)
+        lines = (d.p ?? []).map { Geo.decodePolyline($0, precision: 1e5) }.filter { $0.count >= 2 }
+        oneway = d.o == 1
+        radius = lines.isEmpty ? (d.r ?? 150) : nil
+        if let first = lines.first { length = Geo.cumulative(first).last ?? 0 } else { length = 2 * (radius ?? 150) }
+    }
+
+    static func == (a: SafetyZone, b: SafetyZone) -> Bool { a.id == b.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+}
+
+struct SafetySegmentsResponse: Codable, Sendable {
+    var available: Bool
+    var error: String?
+    var complete: Bool?
+    var zoom: Int
+    var tiles: [String: [SafetyZoneDTO]]
 }
 
 struct SafetySource: Codable, Sendable {
     var name: String
     var page: String
     var updated: String?
-}
-
-struct SafetyZonesResponse: Codable, Sendable {
-    var available: Bool
-    var error: String?
-    var source: SafetySource?
-    var zones: [SafetyZone]
 }
 
 struct SafetyZfeProps: Codable, Hashable, Sendable {
@@ -77,8 +109,6 @@ private struct SafetyPoisResponse: Codable, Sendable {
 /// Appels serveur avec cache (comme `data.ts`) : pas de rafales, les réponses « indisponible » ne sont pas gardées.
 @MainActor
 enum SafetyData {
-    private static var zoneCache: [String: Task<SafetyZonesResponse, Error>] = [:]
-    private static var zoneOrder: [String] = []
     private static var zfeTask: Task<SafetyZfeResponse, Error>?
     private static var poiTiles: [String: SafetyPoiTile] = [:]
     private static var poiRetryAt = Date.distantPast
@@ -90,44 +120,86 @@ enum SafetyData {
         return URLSession(configuration: c)
     }()
 
-    /// Toutes les zones de danger de France (≈ 3 300 disques, la liste change ~1×/an) :
-    /// gardées sur le téléphone et redemandées au plus une fois par jour.
-    private struct SavedZones: Codable { var at: Date = .distantPast; var zones: [SafetyZone] = [] }
-    private static var allZonesTask: Task<[SafetyZone], Never>?
-    static func allZones() async -> [SafetyZone] {
-        if let t = allZonesTask { return await t.value }
-        let t = Task<[SafetyZone], Never> {
-            let saved = Store.load("safety.allZones", default: SavedZones())
-            if !saved.zones.isEmpty, Date().timeIntervalSince(saved.at) < 86_400 { return saved.zones }
-            if let r = try? await API.get("safety/zones/all", as: SafetyZonesResponse.self, timeout: 40), r.available, !r.zones.isEmpty {
-                Store.save("safety.allZones", SavedZones(at: Date(), zones: r.zones))
-                return r.zones
-            }
-            return saved.zones // hors ligne : la dernière liste connue
+    // MARK: Zones de danger (tuiles zoom 8, gardées sur le téléphone)
+
+    private struct SavedTile: Codable { var at: Date; var complete: Bool; var zones: [SafetyZoneDTO] }
+    private static var savedTiles: [String: SavedTile]?
+    private static var decoded: [String: [SafetyZone]] = [:]
+    private static var tileTasks: [String: Task<Void, Never>] = [:]
+    private static var saveScheduled = false
+    /// Dernier état connu des données serveur (nil = jamais joint).
+    private(set) static var zonesAvailable: Bool?
+    private(set) static var zonesError: String?
+
+    private static var tiles: [String: SavedTile] {
+        get {
+            if let t = savedTiles { return t }
+            let t = Store.load("safety.segTiles", default: [String: SavedTile]())
+            savedTiles = t
+            return t
         }
-        allZonesTask = t
-        let zones = await t.value
-        if zones.isEmpty { allZonesTask = nil } // on réessaiera
-        return zones
+        set { savedTiles = newValue }
     }
 
-    /// bbox = (ouest, sud, est, nord), au plus 14° de côté (le serveur refuse au-delà).
-    static func zones(_ b: (w: Double, s: Double, e: Double, n: Double)) async throws -> SafetyZonesResponse {
-        let key = [b.w, b.s, b.e, b.n].map { String(format: "%.2f", $0) }.joined(separator: ",")
-        let task: Task<SafetyZonesResponse, Error>
-        if let t = zoneCache[key] { task = t } else {
-            task = Task { try await API.get("safety/zones?bbox=\(key)", as: SafetyZonesResponse.self) }
-            zoneCache[key] = task
-            zoneOrder.append(key)
-            if zoneOrder.count > 40 { zoneCache[zoneOrder.removeFirst()] = nil }
+    /// Zones déjà connues d'une tuile (sans réseau).
+    static func cachedZones(_ key: String) -> [SafetyZone]? {
+        if let z = decoded[key] { return z }
+        guard let t = tiles[key] else { return nil }
+        let z = t.zones.map(SafetyZone.init)
+        decoded[key] = z
+        return z
+    }
+
+    /// Zones des tuiles demandées (cache local, puis serveur pour les tuiles manquantes ou périmées :
+    /// une journée, 10 min tant que le serveur n'a pas fini de calculer les tronçons). Hors ligne : la
+    /// dernière version connue.
+    static func zoneTiles(_ keys: [String]) async -> [String: [SafetyZone]] {
+        let now = Date()
+        let stale = keys.filter { k in
+            guard let t = tiles[k] else { return true }
+            return now.timeIntervalSince(t.at) > (t.complete ? 86_400 : 600)
         }
+        let todo = stale.filter { tileTasks[$0] == nil }
+        var waits = stale.compactMap { tileTasks[$0] }
+        var start = 0
+        while start < todo.count {
+            let chunk = Array(todo[start..<min(todo.count, start + 32)])
+            start += 32
+            let task = Task<Void, Never> { await fetchTiles(chunk) }
+            for k in chunk { tileTasks[k] = task }
+            waits.append(task)
+        }
+        for w in waits { await w.value }
+        var out: [String: [SafetyZone]] = [:]
+        for k in keys { if let z = cachedZones(k) { out[k] = z } }
+        return out
+    }
+
+    private static func fetchTiles(_ keys: [String]) async {
+        defer { for k in keys { tileTasks[k] = nil } }
         do {
-            let r = try await task.value
-            if !r.available { zoneCache[key] = nil }
-            return r
+            let r = try await API.get("safety/segments?tiles=\(keys.joined(separator: ","))", as: SafetySegmentsResponse.self, timeout: 30)
+            zonesAvailable = r.available
+            zonesError = r.available ? nil : (r.error ?? "indisponible")
+            guard r.available else { return }
+            let complete = r.complete ?? true
+            for k in keys {
+                tiles[k] = SavedTile(at: Date(), complete: complete, zones: r.tiles[k] ?? [])
+                decoded[k] = nil
+            }
+            scheduleSave()
         } catch {
-            zoneCache[key] = nil
-            throw error
+            if zonesAvailable == nil { zonesError = error.localizedDescription }
+        }
+    }
+
+    private static func scheduleSave() {
+        guard !saveScheduled else { return }
+        saveScheduled = true
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            saveScheduled = false
+            if let t = savedTiles { Store.save("safety.segTiles", t) }
         }
     }
 
@@ -178,6 +250,21 @@ enum SafetyData {
 enum SafetyGeo {
     static let poiZoom = 12
     static let mPerDeg = 111_320.0
+
+    static let zoneZoom = 8
+
+    /// Tuiles (zoom 8) qui couvrent un rectangle (ouest, sud, est, nord), au plus `limit`.
+    static func zoneTiles(w: Double, s: Double, e: Double, n: Double, limit: Int = 64) -> [String] {
+        let z = zoneZoom, k = Double(1 << z)
+        func tx(_ lng: Double) -> Int { max(0, min(Int(k) - 1, Int(floor((lng + 180) / 360 * k)))) }
+        func ty(_ lat: Double) -> Int {
+            let r = max(-85, min(85, lat)) * .pi / 180
+            return max(0, min(Int(k) - 1, Int(floor((1 - log(tan(r) + 1 / cos(r)) / .pi) / 2 * k))))
+        }
+        var out: [String] = []
+        for x in tx(w)...tx(e) { for y in ty(n)...ty(s) { out.append("\(z)/\(x)/\(y)"); if out.count >= limit { return out } } }
+        return out
+    }
 
     /// Clé de tuile « z/x/y » (Web Mercator) contenant le point.
     static func tileKey(_ c: CLLocationCoordinate2D, z: Int = poiZoom) -> String {

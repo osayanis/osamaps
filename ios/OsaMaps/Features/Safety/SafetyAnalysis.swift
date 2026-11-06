@@ -106,48 +106,81 @@ enum SafetyAnalysis {
 
     // MARK: - Zones de danger
 
-    /// Découpe les disques de zone le long du tracé. Le serveur garantit que l'appareil est à moins de
-    /// r/2 du centre : si le tracé ne passe pas à moins de r/2 du centre, l'appareil n'est pas sur notre
-    /// route → pas de zone. Sinon la zone = la corde du disque sur le tracé, allongée symétriquement
-    /// jusqu'à la longueur réglementaire (2r : 300 m / 2 km / 4 km) si besoin.
+    /// Projection avec le segment touché (pour comparer les caps).
+    private static func projectSeg(_ ix: SafetySegIndex, _ p: CLLocationCoordinate2D, maxDist: Double) -> (offset: Double, along: Double, seg: Int)? {
+        var best: (offset: Double, along: Double, seg: Int)?
+        for i in ix.segmentsNear(p, maxDist) {
+            let (d, t) = segDist(p, ix.coords[i - 1], ix.coords[i])
+            if d <= maxDist, best == nil || d < best!.offset {
+                best = (d, ix.cum[i - 1] + t * (ix.cum[i] - ix.cum[i - 1]), i)
+            }
+        }
+        return best
+    }
+
+    private static func heading(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let (x, y) = local(a)(b)
+        return atan2(x, y) * 180 / .pi
+    }
+
+    /// Portions de l'itinéraire qui suivent une ligne de tronçon : on parcourt la ligne tous les 15 m, chaque
+    /// point doit être à moins de 22 m du tracé ET rouler dans le même sens (écart de cap < 50° ; les deux
+    /// sens pour une route à double sens). Une route qui ne fait que croiser le tronçon ne compte pas.
+    static func lineOverlap(_ ix: SafetySegIndex, _ line: [CLLocationCoordinate2D], oneway: Bool) -> [(start: Double, end: Double)] {
+        guard line.count >= 2 else { return [] }
+        var lineLen = 0.0
+        var out: [(start: Double, end: Double)] = []
+        var run: (lo: Double, hi: Double)?
+        var misses = 0
+        func close() {
+            if let r = run, r.hi - r.lo >= min(60, 0.5 * lineLen) { out.append((r.lo, r.hi)) }
+            run = nil
+        }
+        for i in 1..<line.count { lineLen += Geo.distance(line[i - 1], line[i]) }
+        for i in 1..<line.count {
+            let a = line[i - 1], b = line[i]
+            let len = Geo.distance(a, b)
+            let h = heading(a, b)
+            let n = max(1, Int(ceil(len / 15)))
+            for k in 0...(i == line.count - 1 ? n : n - 1) {
+                let t = Double(k) / Double(n)
+                let p = CLLocationCoordinate2D(latitude: a.latitude + (b.latitude - a.latitude) * t,
+                                               longitude: a.longitude + (b.longitude - a.longitude) * t)
+                if let hit = projectSeg(ix, p, maxDist: 22) {
+                    let diff = abs(angleDiff(heading(ix.coords[hit.seg - 1], ix.coords[hit.seg]), h))
+                    if diff < 50 || (!oneway && diff > 130) {
+                        run = run.map { (min($0.lo, hit.along), max($0.hi, hit.along)) } ?? (hit.along, hit.along)
+                        misses = 0
+                        continue
+                    }
+                }
+                misses += 1
+                if misses > 3 { close() } // un trou de plus de ~45 m coupe la portion
+            }
+        }
+        close()
+        return out
+    }
+
+    /// Zones de danger sur l'itinéraire, en distance le long du tracé.
+    ///  - tronçon : la portion de l'itinéraire qui le parcourt (dans le sens de circulation si connu) ;
+    ///  - disque de repli : la corde du disque sur le tracé si le tracé passe à moins de r/2 du centre (le
+    ///    serveur garantit que l'appareil y est), allongée jusqu'à la longueur réglementaire (2r).
     static func dangerIntervals(_ ix: SafetySegIndex, _ zones: [SafetyZone]) -> [SafetyDanger] {
         let total = ix.total
         var raw: [SafetyDanger] = []
         for z in zones {
-            let c = z.center
-            let L = local(c)
-            var parts: [(start: Double, end: Double, minD: Double)] = []
-            for i in ix.segmentsNear(c, z.r) {
-                let a = ix.coords[i - 1], b = ix.coords[i]
-                let (ax, ay) = L(a), (bx, by) = L(b)
-                let dx = bx - ax, dy = by - ay
-                let qa = dx * dx + dy * dy
-                if qa == 0 { continue }
-                let qb = 2 * (dx * ax + dy * ay)
-                let qc = ax * ax + ay * ay - z.r * z.r
-                let disc = qb * qb - 4 * qa * qc
-                if disc < 0 { continue }
-                let s = disc.squareRoot()
-                let t0 = max(0, (-qb - s) / (2 * qa)), t1 = min(1, (-qb + s) / (2 * qa))
-                if t0 >= t1 { continue }
-                let len = ix.cum[i] - ix.cum[i - 1]
-                let minD = segDist(c, a, b).d
-                let start = ix.cum[i - 1] + t0 * len, end = ix.cum[i - 1] + t1 * len
-                if let last = parts.last, start - last.end < 50 {
-                    parts[parts.count - 1].end = max(last.end, end)
-                    parts[parts.count - 1].minD = min(last.minD, minD)
-                } else {
-                    parts.append((start, end, minD))
+            if let r = z.radius {
+                raw += diskIntervals(ix, z, r: r, total: total)
+                continue
+            }
+            for line in z.lines {
+                for p in lineOverlap(ix, line, oneway: z.oneway) {
+                    raw.append(SafetyDanger(id: z.id, start: max(0, p.start), end: min(total, p.end), kind: z.kind))
                 }
             }
-            for p in parts where p.minD <= z.r / 2 {
-                var start = p.start, end = p.end
-                let need = 2 * z.r - (end - start)
-                if need > 0 { start -= need / 2; end += need / 2 }
-                raw.append(SafetyDanger(id: z.id, start: max(0, start), end: min(total, end), kind: z.kind))
-            }
         }
-        // fusion des zones qui se chevauchent (deux appareils proches = une seule zone)
+        // fusion des zones qui se chevauchent (deux appareils proches, deux chaussées = une seule zone)
         raw.sort { $0.start < $1.start }
         var out: [SafetyDanger] = []
         for z in raw {
@@ -156,6 +189,43 @@ enum SafetyAnalysis {
             } else {
                 out.append(z)
             }
+        }
+        return out
+    }
+
+    private static func diskIntervals(_ ix: SafetySegIndex, _ z: SafetyZone, r: Double, total: Double) -> [SafetyDanger] {
+        let c = z.mid
+        let L = local(c)
+        var parts: [(start: Double, end: Double, minD: Double)] = []
+        for i in ix.segmentsNear(c, r) {
+            let a = ix.coords[i - 1], b = ix.coords[i]
+            let (ax, ay) = L(a), (bx, by) = L(b)
+            let dx = bx - ax, dy = by - ay
+            let qa = dx * dx + dy * dy
+            if qa == 0 { continue }
+            let qb = 2 * (dx * ax + dy * ay)
+            let qc = ax * ax + ay * ay - r * r
+            let disc = qb * qb - 4 * qa * qc
+            if disc < 0 { continue }
+            let s = disc.squareRoot()
+            let t0 = max(0, (-qb - s) / (2 * qa)), t1 = min(1, (-qb + s) / (2 * qa))
+            if t0 >= t1 { continue }
+            let len = ix.cum[i] - ix.cum[i - 1]
+            let minD = segDist(c, a, b).d
+            let start = ix.cum[i - 1] + t0 * len, end = ix.cum[i - 1] + t1 * len
+            if let last = parts.last, start - last.end < 50 {
+                parts[parts.count - 1].end = max(last.end, end)
+                parts[parts.count - 1].minD = min(last.minD, minD)
+            } else {
+                parts.append((start, end, minD))
+            }
+        }
+        var out: [SafetyDanger] = []
+        for p in parts where p.minD <= r / 2 {
+            var start = p.start, end = p.end
+            let need = 2 * r - (end - start)
+            if need > 0 { start -= need / 2; end += need / 2 }
+            out.append(SafetyDanger(id: z.id, start: max(0, start), end: min(total, end), kind: z.kind))
         }
         return out
     }

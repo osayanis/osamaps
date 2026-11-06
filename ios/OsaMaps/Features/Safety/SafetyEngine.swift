@@ -92,21 +92,22 @@ final class SafetyEngine {
 
     // MARK: - Analyse de l'itinéraire
 
-    private static func bbox(_ coords: [CLLocationCoordinate2D], pad: Double = 0.03) -> [(w: Double, s: Double, e: Double, n: Double)] {
-        var w = 180.0, s = 90.0, e = -180.0, n = -90.0
-        for c in coords {
-            w = min(w, c.longitude); e = max(e, c.longitude); s = min(s, c.latitude); n = max(n, c.latitude)
+    /// Tuiles de zones (zoom 8) traversées par le tracé, avec une marge de ~3 km (un tronçon dont le
+    /// milieu est dans la tuile voisine peut déborder jusqu'à 2 km).
+    private static func zoneTiles(_ ix: SafetySegIndex) -> [String] {
+        var keys: [String] = []
+        var seen = Set<String>()
+        var d = 0.0
+        let total = ix.total
+        while true {
+            let p = Geo.along(ix.coords, ix.cum, min(d, total))
+            let dLat = 0.03, dLng = 0.03 / max(0.2, cos(p.latitude * .pi / 180))
+            for k in SafetyGeo.zoneTiles(w: p.longitude - dLng, s: p.latitude - dLat, e: p.longitude + dLng, n: p.latitude + dLat)
+            where seen.insert(k).inserted { keys.append(k) }
+            if d >= total { break }
+            d += 1500
         }
-        w -= pad; s -= pad; e += pad; n += pad
-        // découpe en morceaux acceptés par le serveur (≤ 14°)
-        var out: [(w: Double, s: Double, e: Double, n: Double)] = []
-        var x = w
-        while x < e {
-            var y = s
-            while y < n { out.append((x, y, min(e, x + 12), min(n, y + 12))); y += 12 }
-            x += 12
-        }
-        return out
+        return keys
     }
 
     func analyze(_ route: Route?, force: Bool = false) {
@@ -144,25 +145,18 @@ final class SafetyEngine {
     /// Données serveur, avec nouvelles tentatives (serveur qui démarre ou injoignable) : 5 × 30 s.
     private func loadZones(route: Route, index: SafetySegIndex, gen: Int, attempt: Int) {
         Task {
-            do {
-                var all: [SafetyZone] = []
-                var err: String?
-                for b in Self.bbox(index.coords) {
-                    let r = try await SafetyData.zones(b)
-                    all += r.zones
-                    if !r.available { err = r.error ?? "indisponible" }
-                }
-                let zones = all
-                let found = await Task.detached(priority: .utility) { SafetyAnalysis.dangerIntervals(index, zones) }.value
-                guard generation == gen else { return }
-                dangers = found
-                zonesError = err
-                if err != nil { retry(attempt) { $0.loadZones(route: route, index: index, gen: gen, attempt: attempt + 1) } }
-            } catch {
-                guard generation == gen else { return }
-                zonesError = error.localizedDescription
-                retry(attempt) { $0.loadZones(route: route, index: index, gen: gen, attempt: attempt + 1) }
-            }
+            let keys = Self.zoneTiles(index)
+            let got = await SafetyData.zoneTiles(keys)
+            guard generation == gen else { return }
+            var byId: [String: SafetyZone] = [:]
+            for list in got.values { for z in list { byId[z.id] = z } }
+            let zones = Array(byId.values)
+            let found = await Task.detached(priority: .utility) { SafetyAnalysis.dangerIntervals(index, zones) }.value
+            guard generation == gen else { return }
+            dangers = found
+            let missing = got.count < keys.count
+            zonesError = missing ? (SafetyData.zonesError ?? "zones de danger indisponibles") : nil
+            if missing { retry(attempt) { $0.loadZones(route: route, index: index, gen: gen, attempt: attempt + 1) } }
         }
     }
 

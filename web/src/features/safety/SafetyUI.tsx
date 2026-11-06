@@ -4,7 +4,7 @@ import { formatDistance } from "../../core/geometry";
 import { useSafety } from "./engine";
 import { answerPassenger, usePassenger } from "./passenger";
 import { CRITAIR_LABEL, critairForbidden, useSafetySettings, type CritAir, type SafetySettings } from "./settings";
-import { fetchZfe, fetchZones, hoursFr } from "./data";
+import { fetchZfe, fetchZoneTiles, hoursFr, zoneTilesIn } from "./data";
 
 /** Triangle de danger (SVG, trait 2 px, coins ronds). */
 function DangerIcon({ size = 22 }: { size?: number }) {
@@ -116,10 +116,10 @@ function useDataStatus() {
   const [msg, setMsg] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    Promise.allSettled([fetchZones([2.3, 46.5, 2.4, 46.6]), fetchZfe()]).then(([z, f]) => {
+    Promise.allSettled([fetchZoneTiles(zoneTilesIn(3.3, 46.5, 3.4, 46.6)), fetchZfe()]).then(([z, f]) => {
       if (!alive) return;
       const missing: string[] = [];
-      if (z.status === "rejected" || !z.value.available) missing.push("zones de danger");
+      if (z.status === "rejected" || z.value.size === 0) missing.push("zones de danger");
       if (f.status === "rejected" || !f.value.available) missing.push("ZFE");
       setMsg(missing.length ? `Données indisponibles pour le moment : ${missing.join(" et ")}. Les autres alertes fonctionnent.` : null);
     });
